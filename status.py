@@ -3,6 +3,7 @@ Entry point for the status dashboard Web service.
 """
 
 from datetime import datetime
+from hashlib import md5
 import logging
 import os
 import cherrypy
@@ -24,14 +25,21 @@ class Status(Authenticated_Application):
     <head>
         <meta charset="utf-8">
         <title>{title} - Status</title>
+        <link rel="stylesheet" href="css">
     </head>
     <body>
-        <h1>Status: {title}</h1>
+        <h1>Status: {title!h}</h1>
         <div class="content">
             {content}
         </div>
     </body>
 </html>"""
+
+    STATUSES = {
+        'failure': (0, 'Problems'),
+        'unknown': (1, 'Missing'),
+        'success': (2, 'OK')
+    }
 
     def __init__(self, args, config):
         super(Status, self).__init__(args, config)
@@ -83,6 +91,7 @@ class Status(Authenticated_Application):
         if os.path.exists(path):
             return {
                 'path': path,
+                'filename': filename,
                 'result': 'unknown',
                 'date': datetime.fromtimestamp(os.path.getmtime(path))
             }
@@ -126,11 +135,75 @@ class Status(Authenticated_Application):
         return self._template.format(self.COMMON_HTML, title='Login',
                                      content=form)
 
+    @cherrypy.expose
+    def css(self):
+        """
+        Serve CSS.
+        """
+
+        content = """
+body {
+  font-family: -apple-system, "Segoe UI", "Roboto", "Ubuntu", "Droid Sans", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+}
+.content {
+    margin: auto 20rem auto 20rem;
+    padding: 2rem 2rem 2rem 10rem;
+    border: 0.01rem solid #aaa;
+    border-radius: 1rem;
+    -webkit-box-shadow: 0 2px 3px rgba(10, 10, 10, 0.1), 0 0 0 1px rgba(10, 10, 10, 0.1);
+    box-shadow: 0 2px 3px rgba(10, 10, 10, 0.1), 0 0 0 1px rgba(10, 10, 10, 0.1);
+    text-align: left;
+}
+table {
+    border: 1px solid #ccc;
+    padding: 0.1rem;
+    margin: 0 auto 0 auto;
+}
+th {
+    background: #eee;
+    border: 1px solid #aaa;
+}
+a {
+    text-decoration: none;
+}
+a:hover, a:active {
+    text-decoration: underline;
+}
+.status-unknown {
+    color: #888;
+}
+.status-failure {
+    color: #b00;
+}
+.status-success {
+    color: #090;
+}
+"""
+
+        cherrypy.response.headers['Content-Type'] = 'text/css'
+        cherrypy.response.headers['ETag'] = md5(content).hexdigest()
+
+        cherrypy.lib.cptools.validate_etags()
+
+        return content
+
+    def _aggregate_status(self, fields):
+        worst = None
+        for log in fields:
+            if 'result' in log and \
+                (worst is None or self.STATUSES[log['result']][0] < self.STATUSES[worst][0]):
+                worst = log['result']
+
+        if worst is None:
+            worst = 'unknown'
+
+        return worst, self.STATUSES[worst][1]
+
     def _format_log(self, fields, log):
         if fields[log] is None:
             return 'Unknown'
 
-        text = '<a href="log?name={name!u}&log={log!u}" class="status-{status!h}">{date}</a>'
+        text = '<a href="log?name={name!u}&amp;log={log!u}" class="status-{status!h}">{date!h}</a>'
         return self._template.format(text, name=fields['name'], log=log,
                                      status=fields[log].get('result', 'unknown'),
                                      date=format_date(fields[log].get('date')))
@@ -146,13 +219,16 @@ class Status(Authenticated_Application):
         row_format = """
     <tr>
         <td>{name!h}</td>
-        <td><span class="status-unknown">STATUS</td>
+        <td><span class="status-{status!h}">{status_text!h}</span></td>
         <td>{agent_log}</td>
         <td>{export_log}</td>
         <td>{jenkins_log}</td>
     </tr>"""
         for fields in data:
+            status, status_text = self._aggregate_status(fields)
             row = self._template.format(row_format,
+                                        status=status,
+                                        status_text=status_text,
                                         agent_log=self._format_log(fields,
                                                                    'agent-log'),
                                         export_log=self._format_log(fields,
@@ -196,7 +272,10 @@ class Status(Authenticated_Application):
             raise cherrypy.HTTPRedirect(build.base_url + 'console')
 
         path = os.path.abspath(fields[log].get('path'))
-        return cherrypy.lib.static.serve_file(path, 'text/plain')
+        return cherrypy.lib.static.serve_file(path,
+                                              content_type='text/plain',
+                                              disposition='inline',
+                                              name=fields[log].get('filename'))
 
 class Bootstrap_Status(Bootstrap):
     """
