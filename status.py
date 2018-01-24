@@ -2,16 +2,139 @@
 Entry point for the status dashboard Web service.
 """
 
+import collections
 from datetime import datetime
 from hashlib import md5
+import json
 import logging
 import os
+import re
 import cherrypy
 from gatherer.jenkins import Jenkins
 from gatherer.utils import format_date
 from server.application import Authenticated_Application
 from server.bootstrap import Bootstrap
 from server.template import Template
+
+class Log_Parser(object):
+    """
+    Generic log parser interface.
+    """
+
+    # List of parsed columns. Each log row has the given fields in its result.
+    COLUMNS = None
+
+    def __init__(self, open_file, date_cutoff=None):
+        self._open_file = open_file
+        self._date_cutoff = date_cutoff
+
+    def parse(self):
+        """
+        Parse the open file to find log rows and levels.
+
+        The returned values are the highest log level encountered within the
+        date cutoff and all parsed row fields (iterable of dictionaries).
+        """
+
+        raise NotImplementedError('Must be implemented by subclasses')
+
+    def is_recent(self, date):
+        """
+        Check whether the given date is within the configured cutoff.
+        """
+
+        if self._date_cutoff is None or date is None:
+            return True
+
+        return self._date_cutoff < date
+
+class NDJSON_Parser(Log_Parser):
+    """
+    Log parser for newline JSON-delimited streams of logging objects as
+    provided by the HTTP logger.
+    """
+
+    COLUMNS = [
+        'date', 'level', 'filename', 'module', 'function', 'message',
+        'traceback'
+    ]
+
+    def parse(self):
+        rows = collections.deque()
+        level = 0
+        for line in self._open_file:
+            log = json.loads(line)
+            if 'created' in log:
+                date = datetime.fromtimestamp(float(log.get('created')))
+            else:
+                date = None
+
+            if 'levelno' in log and self.is_recent(date):
+                level = max(level, int(log['levelno']))
+
+            traceback = log.get('exc_text')
+            if traceback == 'None':
+                traceback = None
+
+            row = {
+                'level': log.get('levelname'),
+                'filename': log.get('pathname'),
+                'module': log.get('module'),
+                'function': log.get('funcName'),
+                'message': log.get('message'),
+                'date': date,
+                'traceback': traceback
+            }
+            rows.appendleft(row)
+
+        return level, rows
+
+class Export_Parser(Log_Parser):
+    """
+    Log parser for scraper and exporter runs.
+    """
+
+    COLUMNS = ['date', 'level', 'message']
+
+    LINE_REGEX = re.compile(
+        r'^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:,(\d{3}))?:([A-Z]+):(.+)'
+    )
+
+    # Java log levels that are not found in Python
+    LEVELS = {
+        'SEVERE': 40,
+        'CONFIG': 10,
+        'FINE': 5,
+        'FINER': 4,
+        'FINEST': 3
+    }
+
+    def parse(self):
+        rows = []
+        level = 0
+        for line in self._open_file:
+            match = self.LINE_REGEX.match(line)
+            if match:
+                parts = match.groups()
+                date = datetime(*[int(bit) if bit is not None else 0 for bit in parts[:7]])
+                level_name = parts[7]
+                if level_name in self.LEVELS:
+                    level_number = self.LEVELS[level_name]
+                else:
+                    try:
+                        level_number = int(logging.getLevelName(level_name))
+                    except ValueError:
+                        level_number = 0
+
+                level = max(level, level_number)
+                row = {
+                    'level': level_name,
+                    'message': parts[8],
+                    'date': date,
+                }
+                rows.append(row)
+
+        return level, rows
 
 class Status(Authenticated_Application):
     # pylint: disable=no-self-use
@@ -36,9 +159,10 @@ class Status(Authenticated_Application):
 </html>"""
 
     STATUSES = {
-        'failure': (0, 'Problems'),
-        'unknown': (1, 'Missing'),
-        'success': (2, 'OK')
+        'failure': (0, 'Errors'),
+        'warning': (1, 'Problems'),
+        'unknown': (2, 'Missing'),
+        'success': (3, 'OK')
     }
 
     def __init__(self, args, config):
@@ -47,6 +171,12 @@ class Status(Authenticated_Application):
         self.config = config
 
         self._template = Template()
+
+    def _get_session_html(self):
+        return self._template.format("""
+            <div class="logout">
+                {user!h} - <a href="logout">Logout</a>
+            </div>""", user=cherrypy.session['authenticated'])
 
     def _get_build_project(self, build, agents):
         for action in build['actions']:
@@ -86,13 +216,30 @@ class Status(Authenticated_Application):
 
         return jobs
 
-    def _find_log(self, agent, filename):
+    def _find_log(self, agent, filename, log_parser=None):
         path = os.path.join(self.args.controller_path, agent, filename)
         if os.path.exists(path):
+            result = 'unknown'
+            rows = []
+            columns = None
+            if log_parser is not None:
+                columns = log_parser.COLUMNS
+                with open(path) as open_file:
+                    parser = log_parser(open_file)
+                    level, rows = parser.parse()
+                    if level > 40:
+                        result = 'failure'
+                    elif level > 30:
+                        result = 'warning'
+                    else:
+                        result = 'success'
+
             return {
                 'path': path,
                 'filename': filename,
-                'result': 'unknown',
+                'result': result,
+                'rows': rows,
+                'columns': columns,
                 'date': datetime.fromtimestamp(os.path.getmtime(path))
             }
 
@@ -101,8 +248,10 @@ class Status(Authenticated_Application):
     def _collect_fields(self, agent, jobs):
         return {
             'name': agent,
-            'agent-log': self._find_log(agent, 'log.json'),
-            'export-log': self._find_log(agent, 'export.log'),
+            'agent-log': self._find_log(agent, 'log.json',
+                                        log_parser=NDJSON_Parser),
+            'export-log': self._find_log(agent, 'export.log',
+                                         log_parser=Export_Parser),
             'jenkins-log': jobs.get(agent, None)
         }
 
@@ -169,6 +318,17 @@ a {
 a:hover, a:active {
     text-decoration: underline;
 }
+.logout {
+    text-align: right;
+    font-size: 90%;
+    color: #777;
+}
+.logout a {
+    color: #5555ff;
+}
+.logout a:hover {
+    color: #ff5555;
+}
 .status-unknown {
     color: #888;
 }
@@ -190,9 +350,15 @@ a:hover, a:active {
     def _aggregate_status(self, fields):
         worst = None
         for log in fields:
-            if 'result' in log and \
-                (worst is None or self.STATUSES[log['result']][0] < self.STATUSES[worst][0]):
-                worst = log['result']
+            if fields[log] is None:
+                # Missing log
+                worst = None
+                break
+
+            if 'result' in fields[log]:
+                result = fields[log]['result']
+                if worst is None or self.STATUSES[result][0] < self.STATUSES[worst][0]:
+                    worst = result
 
         if worst is None:
             worst = 'unknown'
@@ -201,7 +367,7 @@ a:hover, a:active {
 
     def _format_log(self, fields, log):
         if fields[log] is None:
-            return 'Unknown'
+            return '<span class="status-unknown">Missing</span>'
 
         text = '<a href="log?name={name!u}&amp;log={log!u}" class="status-{status!h}">{date!h}</a>'
         return self._template.format(text, name=fields['name'], log=log,
@@ -213,6 +379,8 @@ a:hover, a:active {
         """
         List agents and status overview.
         """
+
+        self.validate_login()
 
         data = self._collect()
         rows = []
@@ -240,6 +408,7 @@ a:hover, a:active {
             rows.append(row)
 
         content = self._template.format("""
+{session}
 <table>
     <tr>
         <th>Agent name</th>
@@ -249,16 +418,62 @@ a:hover, a:active {
         <th>Scrape log</th>
     </tr>
     {rows}
-</table>""", rows='\n'.join(rows))
+</table>""", session=self._get_session_html(), rows='\n'.join(rows))
 
         return self._template.format(self.COMMON_HTML, title='Dashboard',
                                      content=content)
 
+    def _format_log_table(self, name, log, fields):
+        columns = fields[log].get('columns')
+        column_heads = []
+        for column in columns:
+            column_heads.append(self._template.format('<th>{name!h}</th>',
+                                                      name=column))
+
+        rows = []
+        for log_row in fields[log].get('rows'):
+            row = []
+            for column in columns:
+                text = log_row[column]
+                if text is None:
+                    text = ''
+                elif column == 'date':
+                    text = format_date(text)
+
+                row.append(self._template.format('<td>{text!h}</td>',
+                                                 text=text))
+
+            rows.append('<tr>' + '\n'.join(row) + '</tr>')
+
+        template = """
+{session}
+Physical path:
+<a href="log?name={name!u}&amp;log={log!u}&amp;plain=true">{path}</a>,
+last changed {date}
+<table>
+    <tr>
+        {column_heads}
+    </tr>
+    {rows}
+</table>
+Return to the <a href="list">list</a>."""
+
+        return self._template.format(template,
+                                     session=self._get_session_html(),
+                                     name=name,
+                                     log=log,
+                                     path=fields[log].get('path'),
+                                     date=format_date(fields[log].get('date')),
+                                     column_heads='\n'.join(column_heads),
+                                     rows='\n'.join(rows))
+
     @cherrypy.expose
-    def log(self, name, log):
+    def log(self, name, log, plain=False):
         """
         Display log file contents.
         """
+
+        self.validate_login()
 
         fields = self._collect_agent(name)
 
@@ -269,7 +484,13 @@ a:hover, a:active {
             jenkins = Jenkins.from_config(self.config)
             job = jenkins.get_job(self.config.get('jenkins', 'scrape'))
             build = job.get_build(fields[log].get('number'))
-            raise cherrypy.HTTPRedirect(build.base_url + 'console')
+            console = 'consoleText' if plain else 'console'
+            raise cherrypy.HTTPRedirect(build.base_url + console)
+
+        if fields[log].get('columns') and not plain:
+            content = self._format_log_table(name, log, fields)
+            return self._template.format(self.COMMON_HTML, title='Log',
+                                         content=content)
 
         path = os.path.abspath(fields[log].get('path'))
         return cherrypy.lib.static.serve_file(path,
