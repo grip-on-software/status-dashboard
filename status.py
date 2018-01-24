@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import re
+import sys
+import time
 import cherrypy
 from gatherer.jenkins import Jenkins
 from gatherer.utils import format_date
@@ -170,7 +172,9 @@ class Status(Authenticated_Application):
         self.args = args
         self.config = config
 
+        self._jenkins = Jenkins.from_config(self.config)
         self._template = Template()
+        self._cache = cherrypy.lib.caching.MemoryCache()
 
     def _get_session_html(self):
         return self._template.format("""
@@ -192,14 +196,17 @@ class Status(Authenticated_Application):
         logging.info('Could not find project parameter in build')
         return None
 
-    def _collect_jenkins(self, agents):
-        jenkins = Jenkins.from_config(self.config)
+    @staticmethod
+    def _get_build_date(build):
+        return datetime.fromtimestamp(build['timestamp'] / 1000.0)
 
+    def _collect_jenkins(self, agents):
         fields = [
             'actions[parameters[name,value]]', 'number', 'result', 'timestamp'
         ]
-        job = jenkins.get_job(self.config.get('jenkins', 'scrape'),
-                              url={'tree': 'builds[{}]'.format(','.join(fields))})
+        query = {'tree': 'builds[{}]'.format(','.join(fields))}
+        job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'),
+                                    url=query)
 
         if 'builds' not in job.data:
             return {}
@@ -211,7 +218,7 @@ class Status(Authenticated_Application):
                 jobs[agent] = {
                     'number': build['number'],
                     'result': build['result'].lower(),
-                    'date': datetime.fromtimestamp(build['timestamp'] / 1000.0)
+                    'date': self._get_build_date(build)
                 }
 
         return jobs
@@ -245,13 +252,13 @@ class Status(Authenticated_Application):
 
         return None
 
-    def _collect_fields(self, agent, jobs):
+    def _collect_fields(self, agent, jobs, expensive=True):
         return {
             'name': agent,
             'agent-log': self._find_log(agent, 'log.json',
-                                        log_parser=NDJSON_Parser),
+                                        log_parser=NDJSON_Parser if expensive else None),
             'export-log': self._find_log(agent, 'export.log',
-                                         log_parser=Export_Parser),
+                                         log_parser=Export_Parser if expensive else None),
             'jenkins-log': jobs.get(agent, None)
         }
 
@@ -259,14 +266,52 @@ class Status(Authenticated_Application):
         jobs = self._collect_jenkins([agent])
         return self._collect_fields(agent, jobs)
 
-    def _collect(self):
-        agents = os.listdir(self.args.agent_path)
-        jobs = self._collect_jenkins(agents)
-        data = []
+    def _collect(self, data=None, expensive=True):
+        if data is None:
+            data = collections.OrderedDict()
+
+        if data:
+            agents = data.keys()
+        else:
+            agents = os.listdir(self.args.agent_path)
+
+        if expensive:
+            jobs = self._collect_jenkins(agents)
+        else:
+            jobs = {}
+
         for agent in agents:
-            data.append(self._collect_fields(agent, jobs))
+            data.setdefault(agent, {})
+            data[agent].update(self._collect_fields(agent, jobs,
+                                                    expensive=expensive))
 
         return data
+
+    def _get_jenkins_modified_date(self):
+        job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'))
+        build = job.last_build
+        build.query = {'tree': 'timestamp'}
+        return self._get_build_date(build.data)
+
+    def _set_modified_date(self, data, date=None):
+        if date is not None:
+            max_date = date
+        else:
+            max_date = datetime.min
+
+        for fields in data.values():
+            dates = [
+                log['date'] for log in fields.values()
+                if log is not None and 'date' in log
+            ]
+            if dates:
+                max_date = max(max_date, max(dates))
+
+        if max_date > datetime.min:
+            max_time = time.mktime(max_date.timetuple())
+            http_date = cherrypy.lib.httputil.HTTPDate(max_time)
+            cherrypy.response.headers['Cache-Control'] = 'max-age=0, must-revalidate'
+            cherrypy.response.headers['Last-Modified'] = http_date
 
     @cherrypy.expose
     def index(self, page='list', params=''):
@@ -382,7 +427,27 @@ a:hover, a:active {
 
         self.validate_login()
 
-        data = self._collect()
+        data = self._cache.get()
+        cache_miss = data is None
+        has_modified_since = cherrypy.request.headers.get('If-Modified-Since')
+        if has_modified_since:
+            if cache_miss:
+                data = self._collect(expensive=False)
+                jenkins_date = self._get_jenkins_modified_date()
+            else:
+                jenkins_date = None
+
+            self._set_modified_date(data, date=jenkins_date)
+            cherrypy.lib.cptools.validate_since()
+
+        if cache_miss:
+            logging.info('cache miss for %s',
+                         cherrypy.url(qs=cherrypy.serving.request.query_string))
+            data = self._collect(data=data)
+            self._cache.put(data, sys.getsizeof(data))
+        if not has_modified_since:
+            self._set_modified_date(data)
+
         rows = []
         row_format = """
     <tr>
@@ -392,7 +457,7 @@ a:hover, a:active {
         <td>{export_log}</td>
         <td>{jenkins_log}</td>
     </tr>"""
-        for fields in data:
+        for fields in data.values():
             status, status_text = self._aggregate_status(fields)
             row = self._template.format(row_format,
                                         status=status,
@@ -407,7 +472,7 @@ a:hover, a:active {
 
             rows.append(row)
 
-        content = self._template.format("""
+        template = """
 {session}
 <table>
     <tr>
@@ -418,7 +483,11 @@ a:hover, a:active {
         <th>Scrape log</th>
     </tr>
     {rows}
-</table>""", session=self._get_session_html(), rows='\n'.join(rows))
+</table>
+You can <a href="refresh?page=list">refresh</a> this data."""
+        content = self._template.format(template,
+                                        session=self._get_session_html(),
+                                        rows='\n'.join(rows))
 
         return self._template.format(self.COMMON_HTML, title='Dashboard',
                                      content=content)
@@ -456,7 +525,8 @@ last changed {date}
     </tr>
     {rows}
 </table>
-Return to the <a href="list">list</a>."""
+You can <a href="refresh?page=log&amp;params={params!u}">refresh</a> this data
+or return to the <a href="list">list</a>."""
 
         return self._template.format(template,
                                      session=self._get_session_html(),
@@ -465,7 +535,25 @@ Return to the <a href="list">list</a>."""
                                      path=fields[log].get('path'),
                                      date=format_date(fields[log].get('date')),
                                      column_heads='\n'.join(column_heads),
-                                     rows='\n'.join(rows))
+                                     rows='\n'.join(rows),
+                                     params=cherrypy.request.query_string)
+
+    @cherrypy.expose
+    def refresh(self, page='list', params=''):
+        """
+        Clear all caches.
+        """
+
+        self.validate_login()
+
+        self._cache.clear()
+
+        # Return back to a valid page after clearing its cache.
+        self.validate_page(page)
+
+        if params != '':
+            page += '?' + params
+        raise cherrypy.HTTPRedirect(page)
 
     @cherrypy.expose
     def log(self, name, log, plain=False):
@@ -475,7 +563,15 @@ Return to the <a href="list">list</a>."""
 
         self.validate_login()
 
-        fields = self._collect_agent(name)
+        fields = self._cache.get()
+        if fields is None:
+            logging.info('cache miss for %s',
+                         cherrypy.url(qs=cherrypy.serving.request.query_string))
+            fields = self._collect_agent(name)
+            self._cache.put(fields, sys.getsizeof(fields))
+
+        self._set_modified_date({name: fields})
+        cherrypy.lib.cptools.validate_since()
 
         if fields[log] is None:
             raise cherrypy.NotFound('No log data available')
