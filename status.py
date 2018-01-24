@@ -374,14 +374,23 @@ a:hover, a:active {
 .logout a:hover {
     color: #ff5555;
 }
-.status-unknown {
+.status-unknown, .level-debug {
     color: #888;
 }
-.status-failure {
+.status-warning, .level-warning {
+    color: #b80;
+}
+.status-failure, .level-error, .level-critical, .level-severe {
     color: #b00;
 }
-.status-success {
+.status-success, .level-info {
     color: #090;
+}
+.log-date {
+    white-space: nowrap;
+}
+.log-message {
+    font-family: monospace;
 }
 """
 
@@ -484,7 +493,9 @@ a:hover, a:active {
     </tr>
     {rows}
 </table>
-You can <a href="refresh?page=list">refresh</a> this data."""
+<form>
+    <button formaction="refresh" name="page" value="list">Refresh</button>
+</form>"""
         content = self._template.format(template,
                                         session=self._get_session_html(),
                                         rows='\n'.join(rows))
@@ -495,21 +506,27 @@ You can <a href="refresh?page=list">refresh</a> this data."""
     def _format_log_table(self, name, log, fields):
         columns = fields[log].get('columns')
         column_heads = []
+        column_format = """<th>{name!h}</th>"""
         for column in columns:
-            column_heads.append(self._template.format('<th>{name!h}</th>',
+            column_heads.append(self._template.format(column_format,
                                                       name=column))
 
         rows = []
+        row_format = """<td class="{column_class!h}">{text!h}</td>"""
         for log_row in fields[log].get('rows'):
             row = []
             for column in columns:
+                column_class = 'log-{}'.format(column)
                 text = log_row[column]
                 if text is None:
                     text = ''
                 elif column == 'date':
                     text = format_date(text)
+                elif column == 'level':
+                    column_class = 'level-{}'.format(text.lower())
 
-                row.append(self._template.format('<td>{text!h}</td>',
+                row.append(self._template.format(row_format,
+                                                 column_class=column_class,
                                                  text=text))
 
             rows.append('<tr>' + '\n'.join(row) + '</tr>')
