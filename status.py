@@ -57,7 +57,7 @@ class NDJSON_Parser(Log_Parser):
     """
 
     COLUMNS = [
-        'date', 'level', 'filename', 'module', 'function', 'message',
+        'date', 'level', 'filename', 'line', 'module', 'function', 'message',
         'traceback'
     ]
 
@@ -81,6 +81,7 @@ class NDJSON_Parser(Log_Parser):
             row = {
                 'level': log.get('levelname'),
                 'filename': log.get('pathname'),
+                'line': log.get('lineno'),
                 'module': log.get('module'),
                 'function': log.get('funcName'),
                 'message': log.get('message'),
@@ -357,6 +358,9 @@ th {
     background: #eee;
     border: 1px solid #aaa;
 }
+td {
+    vertical-align: top;
+}
 a {
     text-decoration: none;
 }
@@ -390,6 +394,10 @@ a:hover, a:active {
     white-space: nowrap;
 }
 .log-message {
+    font-family: monospace;
+}
+.log-traceback {
+    white-space: pre-wrap;
     font-family: monospace;
 }
 """
