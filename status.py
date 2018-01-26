@@ -274,7 +274,7 @@ class Status(Authenticated_Application):
         if data:
             agents = data.keys()
         else:
-            agents = os.listdir(self.args.agent_path)
+            agents = sorted(os.listdir(self.args.agent_path))
 
         if expensive:
             jobs = self._collect_jenkins(agents)
