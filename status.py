@@ -3,7 +3,8 @@ Entry point for the status dashboard Web service.
 """
 
 import collections
-from datetime import datetime
+from datetime import datetime, timedelta
+import glob
 from hashlib import md5
 import json
 import logging
@@ -201,7 +202,7 @@ class Status(Authenticated_Application):
     def _get_build_date(build):
         return datetime.fromtimestamp(build['timestamp'] / 1000.0)
 
-    def _collect_jenkins(self, agents):
+    def _collect_jenkins(self, agents, date_cutoff=None):
         fields = [
             'actions[parameters[name,value]]', 'number', 'result', 'timestamp'
         ]
@@ -216,50 +217,74 @@ class Status(Authenticated_Application):
         for build in job.data['builds']:
             agent = self._get_build_project(build, agents)
             if agent is not None and agent not in jobs:
+                job_date = self._get_build_date(build)
+                job_result = self._handle_date_cutoff(job_date, date_cutoff,
+                                                      build['result'].lower())
                 jobs[agent] = {
                     'number': build['number'],
-                    'result': build['result'].lower(),
-                    'date': self._get_build_date(build)
+                    'result': job_result,
+                    'date': job_date
                 }
 
         return jobs
 
-    def _find_log(self, agent, filename, log_parser=None):
+    @staticmethod
+    def _handle_date_cutoff(log_date, date_cutoff, result):
+        if date_cutoff is not None and result in ('unknown', 'success') and \
+            log_date < date_cutoff:
+            return 'warning'
+
+        return result
+
+    @classmethod
+    def _read_log(cls, path, filename, log_parser, date_cutoff):
+        result = 'unknown'
+        rows = []
+        columns = None
+        if log_parser is not None:
+            columns = log_parser.COLUMNS
+            with open(path) as open_file:
+                parser = log_parser(open_file, date_cutoff=date_cutoff)
+                level, rows = parser.parse()
+                if level > 40:
+                    result = 'failure'
+                elif level > 30:
+                    result = 'warning'
+                else:
+                    result = 'success'
+
+        log_date = datetime.fromtimestamp(os.path.getmtime(path))
+        return {
+            'path': path,
+            'filename': filename,
+            'result': cls._handle_date_cutoff(log_date, date_cutoff, result),
+            'rows': rows,
+            'columns': columns,
+            'date': log_date
+        }
+
+    def _find_log(self, agent, filename, log_parser=None, date_cutoff=None):
         path = os.path.join(self.args.controller_path, agent, filename)
         if os.path.exists(path):
-            result = 'unknown'
-            rows = []
-            columns = None
-            if log_parser is not None:
-                columns = log_parser.COLUMNS
-                with open(path) as open_file:
-                    parser = log_parser(open_file)
-                    level, rows = parser.parse()
-                    if level > 40:
-                        result = 'failure'
-                    elif level > 30:
-                        result = 'warning'
-                    else:
-                        result = 'success'
-
-            return {
-                'path': path,
-                'filename': filename,
-                'result': result,
-                'rows': rows,
-                'columns': columns,
-                'date': datetime.fromtimestamp(os.path.getmtime(path))
-            }
+            return self._read_log(path, filename, log_parser, date_cutoff)
+        else:
+            # Read rotated stale log
+            rotated_paths = sorted(glob.glob(path + '-*'), reverse=True)
+            if rotated_paths:
+                return self._read_log(rotated_paths[0], filename, log_parser,
+                                      date_cutoff)
 
         return None
 
-    def _collect_fields(self, agent, jobs, expensive=True):
+    def _collect_fields(self, agent, jobs, expensive=True, date_cutoff=None):
         return {
             'name': agent,
             'agent-log': self._find_log(agent, 'log.json',
-                                        log_parser=NDJSON_Parser if expensive else None),
+                                        log_parser=NDJSON_Parser if expensive else None,
+                                        date_cutoff=date_cutoff),
             'export-log': self._find_log(agent, 'export.log',
-                                         log_parser=Export_Parser if expensive else None),
+                                         log_parser=Export_Parser if expensive else None,
+                                         date_cutoff=date_cutoff),
             'jenkins-log': jobs.get(agent, None)
         }
 
@@ -267,7 +292,7 @@ class Status(Authenticated_Application):
         jobs = self._collect_jenkins([agent])
         return self._collect_fields(agent, jobs)
 
-    def _collect(self, data=None, expensive=True):
+    def _collect(self, data=None, expensive=True, date_cutoff=None):
         if data is None:
             data = collections.OrderedDict()
 
@@ -277,14 +302,15 @@ class Status(Authenticated_Application):
             agents = sorted(os.listdir(self.args.agent_path))
 
         if expensive:
-            jobs = self._collect_jenkins(agents)
+            jobs = self._collect_jenkins(agents, date_cutoff=date_cutoff)
         else:
             jobs = {}
 
         for agent in agents:
             data.setdefault(agent, {})
             data[agent].update(self._collect_fields(agent, jobs,
-                                                    expensive=expensive))
+                                                    expensive=expensive,
+                                                    date_cutoff=date_cutoff))
 
         return data
 
@@ -460,7 +486,8 @@ a:hover, a:active {
         if cache_miss:
             logging.info('cache miss for %s',
                          cherrypy.url(qs=cherrypy.serving.request.query_string))
-            data = self._collect(data=data)
+            date_cutoff = datetime.now() - timedelta(days=self.args.cutoff_days)
+            data = self._collect(data=data, date_cutoff=date_cutoff)
             self._cache.put(data, sys.getsizeof(data))
         if not has_modified_since:
             self._set_modified_date(data)
@@ -635,6 +662,8 @@ class Bootstrap_Status(Bootstrap):
         parser.add_argument('--controller-path', dest='controller_path',
                             default='/controller',
                             help='Path to controller data')
+        parser.add_argument('--cutoff-days', dest='cutoff_days', type=int,
+                            default=7, help='Days during which logs are fresh')
 
     def mount(self, conf):
         cherrypy.tree.mount(Status(self.args, self.config), '/status', conf)
