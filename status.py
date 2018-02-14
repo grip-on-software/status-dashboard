@@ -62,6 +62,8 @@ class NDJSON_Parser(Log_Parser):
         'traceback'
     ]
 
+    IGNORE_MESSAGES = ['HTTP error 503 for controller status']
+
     def parse(self):
         rows = collections.deque()
         level = 0
@@ -72,7 +74,9 @@ class NDJSON_Parser(Log_Parser):
             else:
                 date = None
 
-            if 'levelno' in log and self.is_recent(date):
+            message = log.get('message')
+            if 'levelno' in log and message not in self.IGNORE_MESSAGES and \
+                self.is_recent(date):
                 level = max(level, int(log['levelno']))
 
             traceback = log.get('exc_text')
@@ -85,7 +89,7 @@ class NDJSON_Parser(Log_Parser):
                 'line': log.get('lineno'),
                 'module': log.get('module'),
                 'function': log.get('funcName'),
-                'message': log.get('message'),
+                'message': message,
                 'date': date,
                 'traceback': traceback
             }
@@ -538,6 +542,25 @@ a:hover, a:active {
         return self._template.format(self.COMMON_HTML, title='Dashboard',
                                      content=content)
 
+    def _format_log_row(self, log_row, columns):
+        field_format = """<td class="{column_class!h}">{text!h}</td>"""
+        row = []
+        for column in columns:
+            column_class = 'log-{}'.format(column)
+            text = log_row[column]
+            if text is None:
+                text = ''
+            elif column == 'date':
+                text = format_date(text)
+            elif column == 'level':
+                column_class = 'level-{}'.format(text.lower())
+
+            row.append(self._template.format(field_format,
+                                             column_class=column_class,
+                                             text=text))
+
+        return "<tr>{row}</tr>".format(row='\n'.join(row))
+
     def _format_log_table(self, name, log, fields):
         columns = fields[log].get('columns')
         column_heads = []
@@ -547,30 +570,14 @@ a:hover, a:active {
                                                       name=column))
 
         rows = []
-        row_format = """<td class="{column_class!h}">{text!h}</td>"""
         for log_row in fields[log].get('rows'):
-            row = []
-            for column in columns:
-                column_class = 'log-{}'.format(column)
-                text = log_row[column]
-                if text is None:
-                    text = ''
-                elif column == 'date':
-                    text = format_date(text)
-                elif column == 'level':
-                    column_class = 'level-{}'.format(text.lower())
-
-                row.append(self._template.format(row_format,
-                                                 column_class=column_class,
-                                                 text=text))
-
-            rows.append('<tr>' + '\n'.join(row) + '</tr>')
+            rows.append(self._format_log_row(log_row, columns))
 
         template = """
 {session}
 Physical path:
 <a href="log?name={name!u}&amp;log={log!u}&amp;plain=true">{path}</a>,
-last changed {date}
+last changed <span class="status-{status}">{date}</span>
 <table>
     <tr>
         {column_heads}
@@ -580,11 +587,15 @@ last changed {date}
 You can <a href="refresh?page=log&amp;params={params!u}">refresh</a> this data
 or return to the <a href="list">list</a>."""
 
+        date_cutoff = datetime.now() - timedelta(days=self.args.cutoff_days)
+        status = self._handle_date_cutoff(fields[log].get('date'), date_cutoff,
+                                          'success')
         return self._template.format(template,
                                      session=self._get_session_html(),
                                      name=name,
                                      log=log,
                                      path=fields[log].get('path'),
+                                     status=status,
                                      date=format_date(fields[log].get('date')),
                                      column_heads='\n'.join(column_heads),
                                      rows='\n'.join(rows),
@@ -663,7 +674,8 @@ class Bootstrap_Status(Bootstrap):
                             default='/controller',
                             help='Path to controller data')
         parser.add_argument('--cutoff-days', dest='cutoff_days', type=int,
-                            default=7, help='Days during which logs are fresh')
+                            default=int(self.config.get('schedule', 'days'))+1,
+                            help='Days during which logs are fresh')
 
     def mount(self, conf):
         cherrypy.tree.mount(Status(self.args, self.config), '/status', conf)
