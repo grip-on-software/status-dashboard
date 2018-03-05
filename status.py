@@ -62,7 +62,18 @@ class NDJSON_Parser(Log_Parser):
         'traceback'
     ]
 
-    IGNORE_MESSAGES = ['HTTP error 503 for controller status']
+    IGNORE_MESSAGES = [
+        re.compile(r'^HTTP error 503 for controller status$'),
+        re.compile(r'Cannot retrieve repository source for dummy repository on')
+    ]
+
+    def is_ignored(self, message):
+        """
+        Check whether the given log message is ignored with regard to the
+        overall status of the action log.
+        """
+
+        return any(ignore.match(message) for ignore in self.IGNORE_MESSAGES)
 
     def parse(self):
         rows = collections.deque()
@@ -75,7 +86,7 @@ class NDJSON_Parser(Log_Parser):
                 date = None
 
             message = log.get('message')
-            if 'levelno' in log and message not in self.IGNORE_MESSAGES and \
+            if 'levelno' in log and not self.is_ignored(message) and \
                 self.is_recent(date):
                 level = max(level, int(log['levelno']))
 
