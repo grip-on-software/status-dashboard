@@ -64,6 +64,8 @@ class NDJSON_Parser(Log_Parser):
 
     IGNORE_MESSAGES = [
         re.compile(r'^HTTP error 503 for controller status$'),
+        re.compile(r'^Controller status: Some parts are not OK: ' + \
+            r'Status \'tracker\': Next scheduled gather moment is in'),
         re.compile(r'Cannot retrieve repository source for dummy repository on')
     ]
 
