@@ -14,6 +14,7 @@ import sys
 import time
 import cherrypy
 from gatherer.jenkins import Jenkins
+from gatherer.log import Log_Setup
 from gatherer.utils import format_date
 from server.application import Authenticated_Application
 from server.bootstrap import Bootstrap
@@ -27,7 +28,7 @@ class Log_Parser(object):
     # List of parsed columns. Each log row has the given fields in its result.
     COLUMNS = None
 
-    def __init__(self, open_file, date_cutoff=None):
+    def __init__(self, open_file, date_cutoff=None,):
         self._open_file = open_file
         self._date_cutoff = date_cutoff
 
@@ -62,21 +63,6 @@ class NDJSON_Parser(Log_Parser):
         'traceback'
     ]
 
-    IGNORE_MESSAGES = [
-        re.compile(r'^HTTP error 503 for controller status$'),
-        re.compile(r'^Controller status: Some parts are not OK: ' + \
-            r'Status \'tracker\': Next scheduled gather moment is in'),
-        re.compile(r'Cannot retrieve repository source for dummy repository on')
-    ]
-
-    def is_ignored(self, message):
-        """
-        Check whether the given log message is ignored with regard to the
-        overall status of the action log.
-        """
-
-        return any(ignore.match(message) for ignore in self.IGNORE_MESSAGES)
-
     def parse(self):
         rows = collections.deque()
         level = 0
@@ -88,7 +74,7 @@ class NDJSON_Parser(Log_Parser):
                 date = None
 
             message = log.get('message')
-            if 'levelno' in log and not self.is_ignored(message) and \
+            if 'levelno' in log and not Log_Setup.is_ignored(message) and \
                 self.is_recent(date):
                 level = max(level, int(log['levelno']))
 
