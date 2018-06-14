@@ -218,6 +218,9 @@ class Status(Authenticated_Application):
 
         jobs = {}
         for build in job.data['builds']:
+            if 'result' not in build:
+                continue
+
             agent = self._get_build_project(build, agents)
             if agent is not None and agent not in jobs:
                 job_date = self._get_build_date(build)
