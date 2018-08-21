@@ -435,7 +435,7 @@ a:hover, a:active {
 """
 
         cherrypy.response.headers['Content-Type'] = 'text/css'
-        cherrypy.response.headers['ETag'] = md5(content).hexdigest()
+        cherrypy.response.headers['ETag'] = md5(content.encode('ISO-8859-1')).hexdigest()
 
         cherrypy.lib.cptools.validate_etags()
 
