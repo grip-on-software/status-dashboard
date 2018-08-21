@@ -665,6 +665,10 @@ class Bootstrap_Status(Bootstrap):
     """
 
     @property
+    def application_id(self):
+        return 'status_dashboard'
+
+    @property
     def description(self):
         return 'Run deployment WSGI server'
 
