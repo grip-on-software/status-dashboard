@@ -13,9 +13,11 @@ import re
 import sys
 import time
 import cherrypy
+from gatherer.domain import Source
 from gatherer.jenkins import Jenkins
 from gatherer.log import Log_Setup
 from gatherer.utils import format_date
+from gatherer.version_control.review import Review_System
 from server.application import Authenticated_Application
 from server.bootstrap import Bootstrap
 from server.template import Template
@@ -172,6 +174,13 @@ class Status(Authenticated_Application):
         'success': (3, 'OK')
     }
 
+    PORTS = {
+        'agent': 7070,
+        'www': 8080
+    }
+
+    GATHERER_SOURCE = 'gatherer'
+
     def __init__(self, args, config):
         super(Status, self).__init__(args, config)
         self.args = args
@@ -180,6 +189,11 @@ class Status(Authenticated_Application):
         self._jenkins = Jenkins.from_config(self.config)
         self._template = Template()
         self._cache = cherrypy.lib.caching.MemoryCache()
+
+        gatherer_url = '{}{}'.format(self.config.get('gitlab', 'url'),
+                                     self.config.get('gitlab', 'repo'))
+        self._source = Source.from_type('gitlab', name=self.GATHERER_SOURCE,
+                                        url=gatherer_url)
 
     def _get_session_html(self):
         return self._template.format("""
@@ -282,8 +296,68 @@ class Status(Authenticated_Application):
 
         return None
 
+    def _get_version_url(self, fields):
+        if self._source.repository_class is None or \
+            not issubclass(self._source.repository_class, Review_System):
+            return None
+
+        return self._source.repository_class.get_tree_url(self._source,
+                                                          fields['sha'])
+
+    def _collect_agent_version(self, fields, expensive=True):
+        for tags in fields['version'].split(' '):
+            component, tag = tags.split('/', 1)
+            if component == self.GATHERER_SOURCE:
+                try:
+                    version, branch, sha = tag.split('-')
+                except ValueError:
+                    return
+
+                fields.update({
+                    'version': version,
+                    'branch': branch,
+                    'sha': sha
+                })
+
+                if expensive:
+                    fields['version_url'] = self._get_version_url(fields)
+
+                return
+
+    def _collect_agent_status(self, agent, expensive=True):
+        path = os.path.join(self.args.controller_path,
+                            "agent-{}.json".format(agent))
+        fields = {
+            'hostname': None,
+            'version': None,
+            'branch': None,
+            'sha': None,
+            'version_url': None
+        }
+        if not os.path.exists(path):
+            return fields
+
+        with open(path, 'r') as status_file:
+            fields.update(json.load(status_file))
+
+        # Convert agent instance to www and add protocol and port
+        if fields['hostname'] is not None:
+            instance, domain = fields['hostname'].split('.', 1)
+            if instance == 'agent':
+                instance = 'www'
+
+            if instance in self.PORTS:
+                fields['hostname'] = 'http://{}.{}:{}/'.format(instance, domain,
+                                                               self.PORTS[instance])
+
+        # Parse version strings
+        if fields['version'] is not None:
+            self._collect_agent_version(fields, expensive=expensive)
+
+        return fields
+
     def _collect_fields(self, agent, jobs, expensive=True, date_cutoff=None):
-        return {
+        fields = {
             'name': agent,
             'agent-log': self._find_log(agent, 'log.json',
                                         log_parser=NDJSON_Parser if expensive else None,
@@ -293,6 +367,8 @@ class Status(Authenticated_Application):
                                          date_cutoff=date_cutoff),
             'jenkins-log': jobs.get(agent, None)
         }
+        fields.update(self._collect_agent_status(agent, expensive=expensive))
+        return fields
 
     def _collect_agent(self, agent):
         jobs = self._collect_jenkins([agent])
@@ -468,6 +544,26 @@ a:hover, a:active {
                                      status=fields[log].get('result', 'unknown'),
                                      date=format_date(fields[log].get('date')))
 
+    def _format_name(self, fields):
+        if fields['hostname'] is None:
+            template = '{name!h}'
+        else:
+            template = '<a href="{hostname!h}" target="_blank">{name!h}</a>'
+
+        return self._template.format(template, **fields)
+
+    def _format_version(self, fields):
+        if fields['version'] is None:
+            return '<span class="status-unknown">Missing</span>'
+
+        if fields['sha'] is None:
+            template = '<span class="ellipsis">{version!h}</span>'
+        elif fields['version_url'] is None:
+            template = '<span title="{sha!h}">{version!h}</span>'
+        else:
+            template = '<a href="{version_url!h}" title="{sha!h}">{version!h}</a>'
+        return self._template.format(template, **fields)
+
     @cherrypy.expose
     def list(self):
         """
@@ -501,7 +597,8 @@ a:hover, a:active {
         rows = []
         row_format = """
     <tr>
-        <td>{name!h}</td>
+        <td>{name}</td>
+        <td>{version}</td>
         <td><span class="status-{status!h}">{status_text!h}</span></td>
         <td>{agent_log}</td>
         <td>{export_log}</td>
@@ -510,6 +607,8 @@ a:hover, a:active {
         for fields in data.values():
             status, status_text = self._aggregate_status(fields)
             row = self._template.format(row_format,
+                                        name=self._format_name(fields),
+                                        version=self._format_version(fields),
                                         status=status,
                                         status_text=status_text,
                                         agent_log=self._format_log(fields,
@@ -517,8 +616,7 @@ a:hover, a:active {
                                         export_log=self._format_log(fields,
                                                                     'export-log'),
                                         jenkins_log=self._format_log(fields,
-                                                                     'jenkins-log'),
-                                        **fields)
+                                                                     'jenkins-log'))
 
             rows.append(row)
 
@@ -527,6 +625,7 @@ a:hover, a:active {
 <table>
     <tr>
         <th>Agent name</th>
+        <th>Version</th>
         <th>Status</th>
         <th>Agent log</th>
         <th>Export log</th>
