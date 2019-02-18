@@ -13,6 +13,7 @@ import re
 import sys
 import time
 import cherrypy
+import Pyro4
 from gatherer.domain import Source
 from gatherer.jenkins import Jenkins
 from gatherer.log import Log_Setup
@@ -249,7 +250,7 @@ class Status(Authenticated_Application):
         return jobs
 
     @staticmethod
-    def _handle_date_cutoff(log_date, date_cutoff, result):
+    def _handle_date_cutoff(log_date, date_cutoff, result='success'):
         if date_cutoff is not None and result in ('unknown', 'success') and \
             log_date < date_cutoff:
             return 'warning'
@@ -287,14 +288,25 @@ class Status(Authenticated_Application):
         path = os.path.join(self.args.controller_path, agent, filename)
         if os.path.exists(path):
             return self._read_log(path, filename, log_parser, date_cutoff)
-        else:
-            # Read rotated stale log
-            rotated_paths = sorted(glob.glob(path + '-*'), reverse=True)
-            if rotated_paths:
-                return self._read_log(rotated_paths[0], filename, log_parser,
-                                      date_cutoff)
+
+        # Read rotated stale log
+        rotated_paths = sorted(glob.glob(path + '-*'), reverse=True)
+        if rotated_paths:
+            return self._read_log(rotated_paths[0], filename, log_parser,
+                                  date_cutoff)
 
         return None
+
+    def _find_date(self, date, interval=None):
+        if interval is None:
+            return None
+        if not isinstance(interval, timedelta):
+            interval = timedelta(seconds=interval)
+
+        return {
+            'result': self._handle_date_cutoff(date + interval, date),
+            'date': date + interval
+        }
 
     def _get_version_url(self, fields):
         if self._source.repository_class is None or \
@@ -356,7 +368,8 @@ class Status(Authenticated_Application):
 
         return fields
 
-    def _collect_fields(self, agent, jobs, expensive=True, date_cutoff=None):
+    def _collect_fields(self, agent, sources,
+                        expensive=True, date_cutoff=None):
         fields = {
             'name': agent,
             'agent-log': self._find_log(agent, 'log.json',
@@ -365,14 +378,32 @@ class Status(Authenticated_Application):
             'export-log': self._find_log(agent, 'export.log',
                                          log_parser=Export_Parser if expensive else None,
                                          date_cutoff=date_cutoff),
-            'jenkins-log': jobs.get(agent, None)
+            'jenkins-log': sources.get("jobs", {}).get(agent, None),
+            'schedule': self._find_date(datetime.now(),
+                                        interval=sources.get("schedule", {}).get(agent, None))
         }
         fields.update(self._collect_agent_status(agent, expensive=expensive))
         return fields
 
+    def _collect_schedule(self, agents):
+        schedule = {}
+        try:
+            gatherer = Pyro4.Proxy("PYRONAME:gros.gatherer")
+            for agent in agents:
+                try:
+                    schedule[agent] = gatherer.get_tracker_schedule(agent)
+                except ValueError:
+                    schedule[agent] = None
+        except Pyro4.errors.NamingError:
+            pass
+
+        return schedule
+
     def _collect_agent(self, agent):
-        jobs = self._collect_jenkins([agent])
-        return self._collect_fields(agent, jobs)
+        return self._collect_fields(agent, {
+            "jobs": self._collect_jenkins([agent]),
+            "schedule": self._collect_schedule([agent])
+        })
 
     def _collect(self, data=None, expensive=True, date_cutoff=None):
         if data is None:
@@ -383,14 +414,16 @@ class Status(Authenticated_Application):
         else:
             agents = sorted(os.listdir(self.args.agent_path))
 
+        sources = {}
         if expensive:
-            jobs = self._collect_jenkins(agents, date_cutoff=date_cutoff)
-        else:
-            jobs = {}
+            sources.update({
+                "schedule": self._collect_schedule(agents),
+                "jobs": self._collect_jenkins(agents, date_cutoff=date_cutoff)
+            })
 
         for agent in agents:
             data.setdefault(agent, {})
-            data[agent].update(self._collect_fields(agent, jobs,
+            data[agent].update(self._collect_fields(agent, sources,
                                                     expensive=expensive,
                                                     date_cutoff=date_cutoff))
 
@@ -411,7 +444,7 @@ class Status(Authenticated_Application):
         for fields in data.values():
             dates = [
                 log['date'] for log in fields.values()
-                if log is not None and 'date' in log
+                if isinstance(log, dict) and log.get('date') is not None
             ]
             if dates:
                 max_date = max(max_date, max(dates))
@@ -449,7 +482,7 @@ body {
   font-family: -apple-system, "Segoe UI", "Roboto", "Ubuntu", "Droid Sans", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
 }
 .content {
-    margin: auto 20rem auto 20rem;
+    margin: 0 10vw 0 10vw;
     padding: 2rem 2rem 2rem 10rem;
     border: 0.01rem solid #aaa;
     border-radius: 1rem;
@@ -535,14 +568,24 @@ a:hover, a:active {
 
         return worst, self.STATUSES[worst][1]
 
-    def _format_log(self, fields, log):
-        if fields[log] is None:
+    def _format_date(self, fields, field_name):
+        field = fields[field_name]
+        if field is None:
             return '<span class="status-unknown">Missing</span>'
 
-        text = '<a href="log?name={name!u}&amp;log={log!u}" class="status-{status!h}">{date!h}</a>'
+        text = '<span class="status-{status!h}">{date!h}</span>'
+        return self._template.format(text,
+                                     status=field.get('result', 'unknown'),
+                                     date=format_date(field.get('date')))
+
+    def _format_log(self, fields, log):
+        if fields[log] is None:
+            return self._format_date(fields, log)
+
+        text = '<a href="log?name={name!u}&amp;log={log!u}">{date}</a>'
         return self._template.format(text, name=fields['name'], log=log,
                                      status=fields[log].get('result', 'unknown'),
-                                     date=format_date(fields[log].get('date')))
+                                     date=self._format_date(fields, log))
 
     def _format_name(self, fields):
         if fields['hostname'] is None:
@@ -603,6 +646,7 @@ a:hover, a:active {
         <td>{agent_log}</td>
         <td>{export_log}</td>
         <td>{jenkins_log}</td>
+        <td>{schedule}</td>
     </tr>"""
         for fields in data.values():
             status, status_text = self._aggregate_status(fields)
@@ -616,7 +660,9 @@ a:hover, a:active {
                                         export_log=self._format_log(fields,
                                                                     'export-log'),
                                         jenkins_log=self._format_log(fields,
-                                                                     'jenkins-log'))
+                                                                     'jenkins-log'),
+                                        schedule=self._format_date(fields,
+                                                                   'schedule'))
 
             rows.append(row)
 
@@ -630,6 +676,7 @@ a:hover, a:active {
         <th>Agent log</th>
         <th>Export log</th>
         <th>Scrape log</th>
+        <th>Schedule</th>
     </tr>
     {rows}
 </table>
