@@ -180,6 +180,10 @@ class Status(Authenticated_Application):
         'www': 8080
     }
 
+    VERSION_PARSER = re.compile(
+        r'(?P<version>[\d.]+)-(?P<branch>.*)-(?P<sha>[0-9a-f]+)'
+    )
+
     GATHERER_SOURCE = 'gatherer'
 
     def __init__(self, args, config):
@@ -320,16 +324,11 @@ class Status(Authenticated_Application):
         for tags in fields['version'].split(' '):
             component, tag = tags.split('/', 1)
             if component == self.GATHERER_SOURCE:
-                try:
-                    version, branch, sha = tag.split('-')
-                except ValueError:
+                match = self.VERSION_PARSER.match(tag)
+                if not match:
                     return
 
-                fields.update({
-                    'version': version,
-                    'branch': branch,
-                    'sha': sha
-                })
+                fields.update(match.groupdict())
 
                 if expensive:
                     fields['version_url'] = self._get_version_url(fields)
