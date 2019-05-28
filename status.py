@@ -301,14 +301,17 @@ class Status(Authenticated_Application):
 
         return None
 
-    def _find_date(self, date, interval=None):
+    def _find_date(self, date, interval=None, threshold=0):
         if interval is None:
             return None
         if not isinstance(interval, timedelta):
             interval = timedelta(seconds=interval)
+        if not isinstance(threshold, timedelta):
+            threshold = timedelta(seconds=threshold)
 
+        status = self._handle_date_cutoff(date + interval, date - threshold)
         return {
-            'result': self._handle_date_cutoff(date + interval, date),
+            'result': status,
             'date': date + interval
         }
 
@@ -379,7 +382,8 @@ class Status(Authenticated_Application):
                                          date_cutoff=date_cutoff),
             'jenkins-log': sources.get("jobs", {}).get(agent, None),
             'schedule': self._find_date(datetime.now(),
-                                        interval=sources.get("schedule", {}).get(agent, None))
+                                        interval=sources.get("schedule", {}).get(agent, None),
+                                        threshold=self.args.schedule_threshold)
         }
         fields.update(self._collect_agent_status(agent, expensive=expensive))
         return fields
@@ -827,6 +831,9 @@ class Bootstrap_Status(Bootstrap):
         parser.add_argument('--cutoff-days', dest='cutoff_days', type=int,
                             default=int(self.config.get('schedule', 'days'))+1,
                             help='Days during which logs are fresh')
+        parser.add_argument('--schedule-threshold', dest='schedule_threshold',
+                            type=int, default=60 * 60,
+                            help='Seconds allowed to be overdue on schedule')
 
     def mount(self, conf):
         cherrypy.tree.mount(Status(self.args, self.config), '/status', conf)
