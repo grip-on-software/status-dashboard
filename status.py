@@ -31,7 +31,7 @@ class Log_Parser(object):
     # List of parsed columns. Each log row has the given fields in its result.
     COLUMNS = None
 
-    def __init__(self, open_file, date_cutoff=None,):
+    def __init__(self, open_file, date_cutoff=None):
         self._open_file = open_file
         self._date_cutoff = date_cutoff
 
@@ -642,18 +642,21 @@ a:hover, a:active {
 
         rows = []
         row_format = """
-    <tr>
-        <td>{name}</td>
-        <td>{version}</td>
-        <td><span class="status-{status!h}">{status_text!h}</span></td>
-        <td>{agent_log}</td>
-        <td>{export_log}</td>
-        <td>{jenkins_log}</td>
-        <td>{schedule}</td>
-    </tr>"""
+        <tr>
+            <td>{name}</td>
+            <td>{version}</td>
+            <td><span class="status-{status!h}">{status_text!h}</span></td>
+            <td>{agent_log}</td>
+            <td>{export_log}</td>
+            <td>{jenkins_log}</td>
+            <td>{schedule}
+                <button formaction="schedule" name="project" value="{project!h}">Reschedule</button>
+            </td>
+        </tr>"""
         for fields in data.values():
             status, status_text = self._aggregate_status(fields)
             row = self._template.format(row_format,
+                                        project=fields['name'],
                                         name=self._format_name(fields),
                                         version=self._format_version(fields),
                                         status=status,
@@ -671,20 +674,21 @@ a:hover, a:active {
 
         template = """
 {session}
-<table>
-    <tr>
-        <th>Agent name</th>
-        <th>Version</th>
-        <th>Status</th>
-        <th>Agent log</th>
-        <th>Export log</th>
-        <th>Scrape log</th>
-        <th>Schedule</th>
-    </tr>
-    {rows}
-</table>
 <form>
-    <button formaction="refresh" name="page" value="list">Refresh</button>
+    <input type="hidden" name="page" value="list">
+    <table>
+        <tr>
+            <th>Agent name</th>
+            <th>Version</th>
+            <th>Status</th>
+            <th>Agent log</th>
+            <th>Export log</th>
+            <th>Scrape log</th>
+            <th>Schedule</th>
+        </tr>
+        {rows}
+    </table>
+    <button formaction="refresh">Refresh</button>
 </form>"""
         content = self._template.format(template,
                                         session=self._get_session_html(),
@@ -751,6 +755,25 @@ or return to the <a href="list">list</a>."""
                                      column_heads='\n'.join(column_heads),
                                      rows='\n'.join(rows),
                                      params=cherrypy.request.query_string)
+
+    @cherrypy.expose
+    def schedule(self, page='list', project=''):
+        """
+        Reschedule a project.
+        """
+
+        self.validate_login()
+        self.validate_page(page)
+
+        if project != '':
+            try:
+                gatherer = Pyro4.Proxy("PYRONAME:gros.gatherer")
+                gatherer.update_tracker_schedule(project)
+                self._cache.clear()
+            except Pyro4.errors.NamingError:
+                pass
+
+        raise cherrypy.HTTPRedirect(page)
 
     @cherrypy.expose
     def refresh(self, page='list', params=''):
