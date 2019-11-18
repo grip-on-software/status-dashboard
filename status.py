@@ -438,12 +438,8 @@ class Status(Authenticated_Application):
         build.query = {'tree': 'timestamp'}
         return self._get_build_date(build.data)
 
-    def _set_modified_date(self, data, date=None):
-        if date is not None:
-            max_date = date
-        else:
-            max_date = datetime.min
-
+    def _set_modified_date(self, data):
+        max_date = datetime.min
         for fields in data.values():
             dates = [
                 log['date'] for log in fields.values()
@@ -621,14 +617,8 @@ a:hover, a:active {
         data = self._cache.get()
         cache_miss = data is None
         has_modified_since = cherrypy.request.headers.get('If-Modified-Since')
-        if has_modified_since:
-            if cache_miss:
-                data = self._collect(expensive=False)
-                jenkins_date = self._get_jenkins_modified_date()
-            else:
-                jenkins_date = None
-
-            self._set_modified_date(data, date=jenkins_date)
+        if has_modified_since and not cache_miss:
+            self._set_modified_date(data)
             cherrypy.lib.cptools.validate_since()
 
         if cache_miss:
