@@ -1,5 +1,20 @@
 """
 Entry point for the status dashboard Web service.
+
+Copyright 2017-2020 ICTU
+Copyright 2017-2022 Leiden University
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import collections
@@ -9,6 +24,7 @@ from hashlib import md5
 import json
 import logging
 import os
+from pathlib import Path
 import re
 import sys
 import time
@@ -23,7 +39,7 @@ from server.application import Authenticated_Application
 from server.bootstrap import Bootstrap
 from server.template import Template
 
-class Log_Parser(object):
+class Log_Parser:
     """
     Generic log parser interface.
     """
@@ -187,16 +203,16 @@ class Status(Authenticated_Application):
     GATHERER_SOURCE = 'gatherer'
 
     def __init__(self, args, config):
-        super(Status, self).__init__(args, config)
+        super().__init__(args, config)
         self.args = args
+        self._controller_path = Path(self.args.controller_path)
         self.config = config
 
         self._jenkins = Jenkins.from_config(self.config)
         self._template = Template()
         self._cache = cherrypy.lib.caching.MemoryCache()
 
-        gatherer_url = '{}{}'.format(self.config.get('gitlab', 'url'),
-                                     self.config.get('gitlab', 'repo'))
+        gatherer_url = f"{self.config.get('gitlab', 'url')}{self.config.get('gitlab', 'repo')}"
         self._source = Source.from_type('gitlab', name=self.GATHERER_SOURCE,
                                         url=gatherer_url)
 
@@ -228,7 +244,7 @@ class Status(Authenticated_Application):
         fields = [
             'actions[parameters[name,value]]', 'number', 'result', 'timestamp'
         ]
-        query = {'tree': 'builds[{}]'.format(','.join(fields))}
+        query = {'tree': f'builds[{",".join(fields)}]'}
         job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'),
                                     url=query)
 
@@ -268,7 +284,7 @@ class Status(Authenticated_Application):
         columns = None
         if log_parser is not None:
             columns = log_parser.COLUMNS
-            with open(path) as open_file:
+            with path.open('r', encoding='utf-8') as open_file:
                 parser = log_parser(open_file, date_cutoff=date_cutoff)
                 level, rows = parser.parse()
                 if level > 40:
@@ -289,14 +305,14 @@ class Status(Authenticated_Application):
         }
 
     def _find_log(self, agent, filename, log_parser=None, date_cutoff=None):
-        path = os.path.join(self.args.controller_path, agent, filename)
-        if os.path.exists(path):
+        path = self._controller_path / agent / filename
+        if path.exists():
             return self._read_log(path, filename, log_parser, date_cutoff)
 
         # Read rotated stale log
-        rotated_paths = sorted(glob.glob(path + '-*'), reverse=True)
+        rotated_paths = sorted(glob.glob(f'{path}-*'), reverse=True)
         if rotated_paths:
-            return self._read_log(rotated_paths[0], filename, log_parser,
+            return self._read_log(Path(rotated_paths[0]), filename, log_parser,
                                   date_cutoff)
 
         return None
@@ -339,8 +355,7 @@ class Status(Authenticated_Application):
                 return
 
     def _collect_agent_status(self, agent, expensive=True):
-        path = os.path.join(self.args.controller_path,
-                            "agent-{}.json".format(agent))
+        path = self._controller_path / f"agent-{agent}.json"
         fields = {
             'hostname': None,
             'version': None,
@@ -348,10 +363,10 @@ class Status(Authenticated_Application):
             'sha': None,
             'version_url': None
         }
-        if not os.path.exists(path):
+        if not path.exists():
             return fields
 
-        with open(path, 'r') as status_file:
+        with path.open('r', encoding='utf-8') as status_file:
             fields.update(json.load(status_file))
 
         # Convert agent instance to www and add protocol and port
@@ -361,8 +376,7 @@ class Status(Authenticated_Application):
                 instance = 'www'
 
             if instance in self.PORTS:
-                fields['hostname'] = 'http://{}.{}:{}/'.format(instance, domain,
-                                                               self.PORTS[instance])
+                fields['hostname'] = f'http://{instance}.{domain}:{self.PORTS[instance]}/'
 
         # Parse version strings
         if fields['version'] is not None:
@@ -415,7 +429,10 @@ class Status(Authenticated_Application):
         if data:
             agents = data.keys()
         else:
-            agents = sorted(os.listdir(self.args.agent_path))
+            agents = sorted(
+                child.name for child in Path(self.args.agent_path).iterdir()
+                if child.is_dir()
+            )
 
         sources = {}
         if expensive:
@@ -688,23 +705,23 @@ a:hover, a:active {
                                      content=content)
 
     def _format_log_row(self, log_row, columns):
-        field_format = """<td class="{column_class!h}">{text!h}</td>"""
+        field_format = """\n<td class="{column_class!h}">{text!h}</td>"""
         row = []
         for column in columns:
-            column_class = 'log-{}'.format(column)
+            column_class = f'log-{column}'
             text = log_row[column]
             if text is None:
                 text = ''
             elif column == 'date':
                 text = format_date(text)
             elif column == 'level':
-                column_class = 'level-{}'.format(text.lower())
+                column_class = f'level-{text.lower()}'
 
             row.append(self._template.format(field_format,
                                              column_class=column_class,
                                              text=text))
 
-        return "<tr>{row}</tr>".format(row='\n'.join(row))
+        return f"<tr>{''.join(row)}</tr>"
 
     def _format_log_table(self, name, log, fields):
         columns = fields[log].get('columns')
@@ -779,7 +796,7 @@ or return to the <a href="list">list</a>."""
         self.validate_page(page)
 
         if params != '':
-            page += '?' + params
+            page += f'?{params}'
         raise cherrypy.HTTPRedirect(page)
 
     @cherrypy.expose
@@ -808,7 +825,7 @@ or return to the <a href="list">list</a>."""
             job = jenkins.get_job(self.config.get('jenkins', 'scrape'))
             build = job.get_build(fields[log].get('number'))
             console = 'consoleText' if plain else 'console'
-            raise cherrypy.HTTPRedirect(build.base_url + console)
+            raise cherrypy.HTTPRedirect(f'{build.base_url}{console}')
 
         if fields[log].get('columns') and not plain:
             content = self._format_log_table(name, log, fields)
