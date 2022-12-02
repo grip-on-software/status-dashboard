@@ -17,7 +17,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+from argparse import ArgumentParser, Namespace
 import collections
+from configparser import RawConfigParser
 from datetime import datetime, timedelta
 import glob
 from hashlib import md5
@@ -28,6 +30,8 @@ from pathlib import Path
 import re
 import sys
 import time
+from typing import Any, Deque, Dict, List, Mapping, MutableSequence, Optional, \
+    Sequence, TextIO, Tuple, Type, Union
 import cherrypy
 import Pyro4
 from gatherer.domain import Source
@@ -39,19 +43,28 @@ from server.application import Authenticated_Application
 from server.bootstrap import Bootstrap
 from server.template import Template
 
+Log_Line = Dict[str, Optional[Union[str, int, datetime]]]
+Log_Columns = List[str]
+Log_Result = Dict[str, Optional[Union[
+    str, Path, MutableSequence[Log_Line], Log_Columns, datetime
+]]]
+Agent_Fields = Dict[str, Any] #Optional[str]
+Data_Sources = Dict[str, Any]
+
 class Log_Parser:
     """
     Generic log parser interface.
     """
 
     # List of parsed columns. Each log row has the given fields in its result.
-    COLUMNS = None
+    COLUMNS: List[str] = []
 
-    def __init__(self, open_file, date_cutoff=None):
+    def __init__(self, open_file: TextIO,
+                 date_cutoff: Optional[datetime] = None):
         self._open_file = open_file
         self._date_cutoff = date_cutoff
 
-    def parse(self):
+    def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
         """
         Parse the open file to find log rows and levels.
 
@@ -61,7 +74,7 @@ class Log_Parser:
 
         raise NotImplementedError('Must be implemented by subclasses')
 
-    def is_recent(self, date):
+    def is_recent(self, date: Optional[datetime]) -> bool:
         """
         Check whether the given date is within the configured cutoff.
         """
@@ -82,8 +95,8 @@ class NDJSON_Parser(Log_Parser):
         'traceback'
     ]
 
-    def parse(self):
-        rows = collections.deque()
+    def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
+        rows: Deque[Log_Line] = collections.deque()
         level = 0
         for line in self._open_file:
             log = json.loads(line)
@@ -135,14 +148,17 @@ class Export_Parser(Log_Parser):
         'FINEST': 3
     }
 
-    def parse(self):
-        rows = []
+    def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
+        rows: MutableSequence[Log_Line] = []
         level = 0
         for line in self._open_file:
             match = self.LINE_REGEX.match(line)
             if match:
                 parts = match.groups()
-                date = datetime(*[int(bit) if bit is not None else 0 for bit in parts[:7]])
+                safe = lambda bit: int(bit) if bit is not None else 0
+                date = datetime(safe(parts[0]), safe(parts[1]), safe(parts[2]),
+                                safe(parts[3]), safe(parts[4]), safe(parts[5]),
+                                safe(parts[7]))
                 level_name = parts[7]
                 if level_name in self.LEVELS:
                     level_number = self.LEVELS[level_name]
@@ -202,7 +218,7 @@ class Status(Authenticated_Application):
 
     GATHERER_SOURCE = 'gatherer'
 
-    def __init__(self, args, config):
+    def __init__(self, args: Namespace, config: RawConfigParser):
         super().__init__(args, config)
         self.args = args
         self._controller_path = Path(self.args.controller_path)
@@ -216,18 +232,20 @@ class Status(Authenticated_Application):
         self._source = Source.from_type('gitlab', name=self.GATHERER_SOURCE,
                                         url=gatherer_url)
 
-    def _get_session_html(self):
+    def _get_session_html(self) -> str:
         return self._template.format("""
             <div class="logout">
                 {user!h} - <a href="logout">Logout</a>
             </div>""", user=cherrypy.session['authenticated'])
 
-    def _get_build_project(self, build, agents):
+    def _get_build_project(self, build: Mapping[str, Any],
+                           agents: Sequence[str]) -> Optional[str]:
         for action in build['actions']:
             if 'parameters' in action:
                 for parameter in action['parameters']:
                     if parameter['name'] == 'listOfProjects':
-                        if parameter['value'] in agents:
+                        project = str(parameter['value'])
+                        if project in agents:
                             return parameter['value']
 
                         # Project is not a valid agent name
@@ -237,10 +255,12 @@ class Status(Authenticated_Application):
         return None
 
     @staticmethod
-    def _get_build_date(build):
+    def _get_build_date(build: Mapping[str, Any]) -> datetime:
         return datetime.fromtimestamp(build['timestamp'] / 1000.0)
 
-    def _collect_jenkins(self, agents, date_cutoff=None):
+    def _collect_jenkins(self, agents: Sequence[str],
+                         date_cutoff: Optional[datetime] = None) -> \
+            Dict[str, Any]:
         fields = [
             'actions[parameters[name,value]]', 'number', 'result', 'timestamp'
         ]
@@ -270,7 +290,8 @@ class Status(Authenticated_Application):
         return jobs
 
     @staticmethod
-    def _handle_date_cutoff(log_date, date_cutoff, result='success'):
+    def _handle_date_cutoff(log_date: datetime, date_cutoff: Optional[datetime],
+                            result: str = 'success') -> str:
         if date_cutoff is not None and result in ('unknown', 'success') and \
             log_date < date_cutoff:
             return 'warning'
@@ -278,9 +299,11 @@ class Status(Authenticated_Application):
         return result
 
     @classmethod
-    def _read_log(cls, path, filename, log_parser, date_cutoff):
+    def _read_log(cls, path: Path, filename: str,
+                  log_parser: Optional[Type[Log_Parser]],
+                  date_cutoff: Optional[datetime]) -> Log_Result:
         result = 'unknown'
-        rows = []
+        rows: MutableSequence[Log_Line] = []
         columns = None
         if log_parser is not None:
             columns = log_parser.COLUMNS
@@ -304,7 +327,10 @@ class Status(Authenticated_Application):
             'date': log_date
         }
 
-    def _find_log(self, agent, filename, log_parser=None, date_cutoff=None):
+    def _find_log(self, agent: str, filename: str,
+                  log_parser: Optional[Type[Log_Parser]] = None,
+                  date_cutoff: Optional[datetime] = None) -> \
+            Optional[Log_Result]:
         path = self._controller_path / agent / filename
         if path.exists():
             return self._read_log(path, filename, log_parser, date_cutoff)
@@ -317,7 +343,10 @@ class Status(Authenticated_Application):
 
         return None
 
-    def _find_date(self, date, interval=None, threshold=0):
+    def _find_date(self, date: datetime,
+                   interval: Optional[Union[timedelta, int]] = None,
+                   threshold: Union[timedelta, int] = 0) -> \
+            Optional[Dict[str, Union[str, datetime]]]:
         if interval is None:
             return None
         if not isinstance(interval, timedelta):
@@ -331,7 +360,7 @@ class Status(Authenticated_Application):
             'date': date + interval
         }
 
-    def _get_version_url(self, fields):
+    def _get_version_url(self, fields: Agent_Fields) -> Optional[str]:
         if self._source.repository_class is None or \
             not issubclass(self._source.repository_class, Review_System):
             return None
@@ -339,7 +368,8 @@ class Status(Authenticated_Application):
         return self._source.repository_class.get_tree_url(self._source,
                                                           fields['sha'])
 
-    def _collect_agent_version(self, fields, expensive=True):
+    def _collect_agent_version(self, fields: Agent_Fields,
+                               expensive: bool = True) -> None:
         for tags in fields['version'].split(' '):
             component, tag = tags.split('/', 1)
             if component == self.GATHERER_SOURCE:
@@ -354,7 +384,8 @@ class Status(Authenticated_Application):
 
                 return
 
-    def _collect_agent_status(self, agent, expensive=True):
+    def _collect_agent_status(self, agent: str, expensive: bool = True) -> \
+            Agent_Fields:
         path = self._controller_path / f"agent-{agent}.json"
         fields = {
             'hostname': None,
@@ -384,8 +415,9 @@ class Status(Authenticated_Application):
 
         return fields
 
-    def _collect_fields(self, agent, sources,
-                        expensive=True, date_cutoff=None):
+    def _collect_fields(self, agent: str, sources: Data_Sources,
+                        expensive: bool = True,
+                        date_cutoff: Optional[datetime] = None) -> Agent_Fields:
         fields = {
             'name': agent,
             'agent-log': self._find_log(agent, 'log.json',
@@ -402,7 +434,7 @@ class Status(Authenticated_Application):
         fields.update(self._collect_agent_status(agent, expensive=expensive))
         return fields
 
-    def _collect_schedule(self, agents):
+    def _collect_schedule(self, agents: Sequence[str]) -> Data_Sources:
         schedule = {}
         try:
             gatherer = Pyro4.Proxy("PYRONAME:gros.gatherer")
@@ -416,18 +448,21 @@ class Status(Authenticated_Application):
 
         return schedule
 
-    def _collect_agent(self, agent):
+    def _collect_agent(self, agent: str) -> Data_Sources:
         return self._collect_fields(agent, {
             "jobs": self._collect_jenkins([agent]),
             "schedule": self._collect_schedule([agent])
         })
 
-    def _collect(self, data=None, expensive=True, date_cutoff=None):
+    def _collect(self, data: Optional[Dict[str, Data_Sources]] = None,
+                 expensive: bool = True,
+                 date_cutoff: Optional[datetime] = None) -> \
+            Dict[str, Data_Sources]:
         if data is None:
             data = collections.OrderedDict()
 
         if data:
-            agents = data.keys()
+            agents = list(data.keys())
         else:
             agents = sorted(
                 child.name for child in Path(self.args.agent_path).iterdir()
@@ -449,13 +484,13 @@ class Status(Authenticated_Application):
 
         return data
 
-    def _get_jenkins_modified_date(self):
+    def _get_jenkins_modified_date(self) -> datetime:
         job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'))
         build = job.last_build
         build.query = {'tree': 'timestamp'}
         return self._get_build_date(build.data)
 
-    def _set_modified_date(self, data):
+    def _set_modified_date(self, data: Dict[str, Data_Sources]) -> None:
         max_date = datetime.min
         for fields in data.values():
             dates = [
@@ -472,7 +507,7 @@ class Status(Authenticated_Application):
             cherrypy.response.headers['Last-Modified'] = http_date
 
     @cherrypy.expose
-    def index(self, page='list', params=''):
+    def index(self, page: str = 'list', params: str = '') -> str:
         form = self._template.format("""
             <form class="login" method="post" action="login?page={page!u}&amp;params={params!u}">
                 <div><label>
@@ -488,7 +523,7 @@ class Status(Authenticated_Application):
                                      content=form)
 
     @cherrypy.expose
-    def css(self):
+    def css(self) -> str:
         """
         Serve CSS.
         """
@@ -566,7 +601,7 @@ a:hover, a:active {
 
         return content
 
-    def _aggregate_status(self, fields):
+    def _aggregate_status(self, fields: Data_Sources) -> Tuple[str, str]:
         worst = None
         for log in fields:
             if fields[log] is None:
@@ -584,7 +619,7 @@ a:hover, a:active {
 
         return worst, self.STATUSES[worst][1]
 
-    def _format_date(self, fields, field_name):
+    def _format_date(self, fields: Data_Sources, field_name: str) -> str:
         field = fields[field_name]
         if field is None:
             return '<span class="status-unknown">Missing</span>'
@@ -594,7 +629,7 @@ a:hover, a:active {
                                      status=field.get('result', 'unknown'),
                                      date=format_date(field.get('date')))
 
-    def _format_log(self, fields, log):
+    def _format_log(self, fields: Data_Sources, log: str) -> str:
         if fields[log] is None:
             return self._format_date(fields, log)
 
@@ -603,7 +638,7 @@ a:hover, a:active {
                                      status=fields[log].get('result', 'unknown'),
                                      date=self._format_date(fields, log))
 
-    def _format_name(self, fields):
+    def _format_name(self, fields: Data_Sources) -> str:
         if fields['hostname'] is None:
             template = '{name!h}'
         else:
@@ -611,7 +646,7 @@ a:hover, a:active {
 
         return self._template.format(template, **fields)
 
-    def _format_version(self, fields):
+    def _format_version(self, fields: Data_Sources) -> str:
         if fields['version'] is None:
             return '<span class="status-unknown">Missing</span>'
 
@@ -624,7 +659,7 @@ a:hover, a:active {
         return self._template.format(template, **fields)
 
     @cherrypy.expose
-    def list(self):
+    def list(self) -> str:
         """
         List agents and status overview.
         """
@@ -704,7 +739,7 @@ a:hover, a:active {
         return self._template.format(self.COMMON_HTML, title='Dashboard',
                                      content=content)
 
-    def _format_log_row(self, log_row, columns):
+    def _format_log_row(self, log_row: Log_Line, columns: Log_Columns) -> str:
         field_format = """\n<td class="{column_class!h}">{text!h}</td>"""
         row = []
         for column in columns:
@@ -712,9 +747,9 @@ a:hover, a:active {
             text = log_row[column]
             if text is None:
                 text = ''
-            elif column == 'date':
+            elif column == 'date' and isinstance(text, datetime):
                 text = format_date(text)
-            elif column == 'level':
+            elif column == 'level' and isinstance(text, str):
                 column_class = f'level-{text.lower()}'
 
             row.append(self._template.format(field_format,
@@ -723,7 +758,8 @@ a:hover, a:active {
 
         return f"<tr>{''.join(row)}</tr>"
 
-    def _format_log_table(self, name, log, fields):
+    def _format_log_table(self, name: str, log: str, fields: Data_Sources) -> \
+            str:
         columns = fields[log].get('columns')
         column_heads = []
         column_format = """<th>{name!h}</th>"""
@@ -764,7 +800,7 @@ or return to the <a href="list">list</a>."""
                                      params=cherrypy.request.query_string)
 
     @cherrypy.expose
-    def schedule(self, page='list', project=''):
+    def schedule(self, page: str = 'list', project: str = '') -> str:
         """
         Reschedule a project.
         """
@@ -783,7 +819,7 @@ or return to the <a href="list">list</a>."""
         raise cherrypy.HTTPRedirect(page)
 
     @cherrypy.expose
-    def refresh(self, page='list', params=''):
+    def refresh(self, page: str = 'list', params: str = '') -> str:
         """
         Clear all caches.
         """
@@ -800,7 +836,7 @@ or return to the <a href="list">list</a>."""
         raise cherrypy.HTTPRedirect(page)
 
     @cherrypy.expose
-    def log(self, name, log, plain=False):
+    def log(self, name: str, log: str, plain: bool = False) -> str:
         """
         Display log file contents.
         """
@@ -844,14 +880,14 @@ class Bootstrap_Status(Bootstrap):
     """
 
     @property
-    def application_id(self):
+    def application_id(self) -> str:
         return 'status_dashboard'
 
     @property
-    def description(self):
+    def description(self) -> str:
         return 'Run deployment WSGI server'
 
-    def add_args(self, parser):
+    def add_args(self, parser: ArgumentParser) -> None:
         parser.add_argument('--agent-path', dest='agent_path',
                             default='/agent',
                             help='Path to agent data')
@@ -865,10 +901,10 @@ class Bootstrap_Status(Bootstrap):
                             type=int, default=60 * 60,
                             help='Seconds allowed to be overdue on schedule')
 
-    def mount(self, conf):
+    def mount(self, conf: Dict[str, Dict[str, Any]]) -> None:
         cherrypy.tree.mount(Status(self.args, self.config), '/status', conf)
 
-def main():
+def main() -> None:
     """
     Main entry point.
     """

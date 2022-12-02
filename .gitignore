@@ -5,6 +5,7 @@
 *.pyc
 *.swp
 *.log
+mypy-report/
 
 # Pip installation
 src/*/
