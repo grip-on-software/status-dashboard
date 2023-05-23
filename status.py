@@ -3,6 +3,7 @@ Entry point for the status dashboard Web service.
 
 Copyright 2017-2020 ICTU
 Copyright 2017-2022 Leiden University
+Copyright 2017-2023 Leon Helwerda
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
