@@ -190,7 +190,6 @@ class Export_Parser(Log_Parser):
         return level, rows
 
 class Status(Authenticated_Application):
-    # pylint: disable=no-self-use
     """
     Status dashboard.
     """
@@ -508,7 +507,7 @@ class Status(Authenticated_Application):
                 if isinstance(log, dict) and log.get('date') is not None
             ]
             if dates:
-                max_date = max(max_date, max(dates))
+                max_date = max(max_date, *dates)
 
         if max_date > datetime.min:
             max_time = time.mktime(max_date.timetuple())
