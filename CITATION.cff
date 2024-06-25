@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: >-
+    Data gathering agent status web application
+message: Please cite this software as follows.
+type: software
+authors:
+  - given-names: Leon
+    family-names: Helwerda
+    email: l.s.helwerda@liacs.leidenuniv.nl
+    affiliation: Leiden University
+    orcid: 'https://orcid.org/0000-0002-4299-466X'
+repository-code: 'https://github.com/grip-on-software/status-dashboard'
+url: 'https://gros.liacs.nl/'
+keywords:
+  - status dashboard
+  - agent-based
+  - log parser
+license: Apache-2.0
+version: 0.0.3
