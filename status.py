@@ -49,7 +49,10 @@ Log_Columns = List[str]
 Log_Result = Dict[str, Optional[Union[
     str, Path, MutableSequence[Log_Line], Log_Columns, datetime
 ]]]
-Agent_Fields = Dict[str, Any] #Optional[str]
+
+Date_Field = Dict[str, Union[str, datetime]]
+Agent_Status_Fields = Dict[str, Optional[str]]
+Agent_Log_Fields = Dict[str, Optional[Union[str, Log_Result, Date_Field]]]
 Data_Sources = Dict[str, Any]
 
 class Log_Parser:
@@ -100,15 +103,15 @@ class NDJSON_Parser(Log_Parser):
         rows: Deque[Log_Line] = collections.deque()
         level = 0
         for line in self._open_file:
-            log = json.loads(line)
+            log: Dict[str, Union[str, int]] = json.loads(line)
             if 'created' in log:
-                date = datetime.fromtimestamp(float(log.get('created')))
+                date = datetime.fromtimestamp(float(log['created']))
             else:
                 date = None
 
             message = log.get('message')
-            if 'levelno' in log and not Log_Setup.is_ignored(message) and \
-                self.is_recent(date):
+            if 'levelno' in log and message is not None and \
+                not Log_Setup.is_ignored(str(message)) and self.is_recent(date):
                 level = max(level, int(log['levelno']))
 
             traceback = log.get('exc_text')
@@ -149,6 +152,10 @@ class Export_Parser(Log_Parser):
         'FINEST': 3
     }
 
+    @staticmethod
+    def _safe_int(bit: Optional[str]) -> int:
+        return int(bit) if bit is not None else 0
+
     def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
         rows: MutableSequence[Log_Line] = []
         level = 0
@@ -156,11 +163,14 @@ class Export_Parser(Log_Parser):
             match = self.LINE_REGEX.match(line)
             if match:
                 parts = match.groups()
-                safe = lambda bit: int(bit) if bit is not None else 0
-                date = datetime(safe(parts[0]), safe(parts[1]), safe(parts[2]),
-                                safe(parts[3]), safe(parts[4]), safe(parts[5]),
-                                safe(parts[7]))
-                level_name = parts[7]
+                date = datetime(self._safe_int(parts[0]),
+                                self._safe_int(parts[1]),
+                                self._safe_int(parts[2]),
+                                self._safe_int(parts[3]),
+                                self._safe_int(parts[4]),
+                                self._safe_int(parts[5]),
+                                self._safe_int(parts[6]))
+                level_name = str(parts[7])
                 if level_name in self.LEVELS:
                     level_number = self.LEVELS[level_name]
                 else:
@@ -170,9 +180,9 @@ class Export_Parser(Log_Parser):
                         level_number = 0
 
                 level = max(level, level_number)
-                row = {
+                row: Log_Line = {
                     'level': level_name,
-                    'message': parts[8],
+                    'message': str(parts[8]),
                     'date': date,
                 }
                 rows.append(row)
@@ -266,22 +276,23 @@ class Status(Authenticated_Application):
             'actions[parameters[name,value]]', 'number', 'result', 'timestamp'
         ]
         query = {'tree': f'builds[{",".join(fields)}]'}
+        jobs: Dict[str, Dict[str, Union[str, int, datetime]]] = {}
         job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'),
                                     url=query)
 
         if 'builds' not in job.data:
-            return {}
+            return jobs
 
-        jobs = {}
         for build in job.data['builds']:
-            if 'result' not in build or build['result'] is None:
+            if build.get('result') is None:
                 continue
 
             agent = self._get_build_project(build, agents)
             if agent is not None and agent not in jobs:
                 job_date = self._get_build_date(build)
+                result = build['result'].lower()
                 job_result = self._handle_date_cutoff(job_date, date_cutoff,
-                                                      build['result'].lower())
+                                                      result)
                 jobs[agent] = {
                     'number': build['number'],
                     'result': job_result,
@@ -347,7 +358,7 @@ class Status(Authenticated_Application):
     def _find_date(self, date: datetime,
                    interval: Optional[Union[timedelta, int]] = None,
                    threshold: Union[timedelta, int] = 0) -> \
-            Optional[Dict[str, Union[str, datetime]]]:
+            Optional[Date_Field]:
         if interval is None:
             return None
         if not isinstance(interval, timedelta):
@@ -361,7 +372,7 @@ class Status(Authenticated_Application):
             'date': date + interval
         }
 
-    def _get_version_url(self, fields: Agent_Fields) -> Optional[str]:
+    def _get_version_url(self, fields: Agent_Status_Fields) -> Optional[str]:
         if self._source.repository_class is None or \
             not issubclass(self._source.repository_class, Review_System):
             return None
@@ -369,9 +380,13 @@ class Status(Authenticated_Application):
         return self._source.repository_class.get_tree_url(self._source,
                                                           fields['sha'])
 
-    def _collect_agent_version(self, fields: Agent_Fields,
+    def _collect_agent_version(self, fields: Agent_Status_Fields,
                                expensive: bool = True) -> None:
-        for tags in fields['version'].split(' '):
+        version = fields.get('version')
+        if version is None:
+            return
+
+        for tags in version.split(' '):
             component, tag = tags.split('/', 1)
             if component == self.GATHERER_SOURCE:
                 match = self.VERSION_PARSER.match(tag)
@@ -386,9 +401,9 @@ class Status(Authenticated_Application):
                 return
 
     def _collect_agent_status(self, agent: str, expensive: bool = True) -> \
-            Agent_Fields:
+            Agent_Status_Fields:
         path = self._controller_path / f"agent-{agent}.json"
-        fields = {
+        fields: Agent_Status_Fields = {
             'hostname': None,
             'version': None,
             'branch': None,
@@ -411,15 +426,15 @@ class Status(Authenticated_Application):
                 fields['hostname'] = f'http://{instance}.{domain}:{self.PORTS[instance]}/'
 
         # Parse version strings
-        if fields['version'] is not None:
-            self._collect_agent_version(fields, expensive=expensive)
+        self._collect_agent_version(fields, expensive=expensive)
 
         return fields
 
     def _collect_fields(self, agent: str, sources: Data_Sources,
                         expensive: bool = True,
-                        date_cutoff: Optional[datetime] = None) -> Agent_Fields:
-        fields = {
+                        date_cutoff: Optional[datetime] = None) -> \
+            Agent_Log_Fields:
+        fields: Agent_Log_Fields = {
             'name': agent,
             'agent-log': self._find_log(agent, 'log.json',
                                         log_parser=NDJSON_Parser if expensive else None,
@@ -484,12 +499,6 @@ class Status(Authenticated_Application):
                                                     date_cutoff=date_cutoff))
 
         return data
-
-    def _get_jenkins_modified_date(self) -> datetime:
-        job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'))
-        build = job.last_build
-        build.query = {'tree': 'timestamp'}
-        return self._get_build_date(build.data)
 
     def _set_modified_date(self, data: Dict[str, Data_Sources]) -> None:
         max_date = datetime.min
@@ -667,20 +676,21 @@ a:hover, a:active {
 
         self.validate_login()
 
-        data = self._cache.get()
-        cache_miss = data is None
-        has_modified_since = cherrypy.request.headers.get('If-Modified-Since')
-        if has_modified_since and not cache_miss:
+        data: Optional[Dict[str, Data_Sources]] = self._cache.get()
+        has_modified = bool(cherrypy.request.headers.get('If-Modified-Since'))
+        if has_modified and data is not None:
+            # Cache hit with a modified date check, so we could send a 304
             self._set_modified_date(data)
             cherrypy.lib.cptools.validate_since()
 
-        if cache_miss:
+        if data is None:
             logging.info('cache miss for %s',
                          cherrypy.url(qs=cherrypy.serving.request.query_string))
             date_cutoff = datetime.now() - timedelta(days=self.args.cutoff_days)
             data = self._collect(data=data, date_cutoff=date_cutoff)
             self._cache.put(data, sys.getsizeof(data))
-        if not has_modified_since:
+        if not has_modified:
+            # We did not set the last-modified date before
             self._set_modified_date(data)
 
         rows = []
@@ -837,14 +847,19 @@ or return to the <a href="list">list</a>."""
         raise cherrypy.HTTPRedirect(page)
 
     @cherrypy.expose
-    def log(self, name: str, log: str, plain: bool = False) -> str:
+    def log(self, name: str = '', log: str = '', plain: bool = False) -> str:
         """
         Display log file contents.
         """
 
         self.validate_login()
 
-        fields = self._cache.get()
+        if name == '':
+            raise cherrypy.NotFound('No agent name selected')
+        if log == '':
+            raise cherrypy.NotFound('No log selected')
+
+        fields: Optional[Data_Sources] = self._cache.get()
         if fields is None:
             logging.info('cache miss for %s',
                          cherrypy.url(qs=cherrypy.serving.request.query_string))
@@ -854,7 +869,7 @@ or return to the <a href="list">list</a>."""
         self._set_modified_date({name: fields})
         cherrypy.lib.cptools.validate_since()
 
-        if fields[log] is None:
+        if fields.get(log) is None:
             raise cherrypy.NotFound('No log data available')
 
         if log == 'jenkins-log':
