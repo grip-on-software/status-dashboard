@@ -227,6 +227,7 @@ class Status(Authenticated_Application):
     )
 
     GATHERER_SOURCE = 'gatherer'
+    GATHERER_URL = 'https://github.com/grip-on-software/data-gathering'
 
     def __init__(self, args: Namespace, config: RawConfigParser):
         super().__init__(args, config)
@@ -238,9 +239,8 @@ class Status(Authenticated_Application):
         self._template = Template()
         self._cache = cherrypy.lib.caching.MemoryCache()
 
-        gatherer_url = f"{self.config.get('gitlab', 'url')}{self.config.get('gitlab', 'repo')}"
-        self._source = Source.from_type('gitlab', name=self.GATHERER_SOURCE,
-                                        url=gatherer_url)
+        self._source = Source.from_type('github', name=self.GATHERER_SOURCE,
+                                        url=self.GATHERER_URL)
 
     def _get_session_html(self) -> str:
         return self._template.format("""
