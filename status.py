@@ -886,7 +886,7 @@ class Bootstrap_Status(Bootstrap):
 
     @property
     def description(self) -> str:
-        return 'Run deployment WSGI server'
+        return 'Run status dashboard WSGI server'
 
     def add_args(self, parser: ArgumentParser) -> None:
         parser.add_argument('--agent-path', dest='agent_path',
