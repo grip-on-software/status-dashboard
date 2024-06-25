@@ -618,9 +618,11 @@ a:hover, a:active {
                 worst = None
                 break
 
-            if 'result' in fields[log]:
+            if 'result' in fields[log] and \
+                fields[log]['result'] in self.STATUSES:
                 result = fields[log]['result']
-                if worst is None or self.STATUSES[result][0] < self.STATUSES[worst][0]:
+                if worst is None or \
+                    self.STATUSES[result][0] < self.STATUSES[worst][0]:
                     worst = result
 
         if worst is None:
@@ -855,7 +857,7 @@ or return to the <a href="list">list</a>."""
 
         if name == '':
             raise cherrypy.NotFound('No agent name selected')
-        if log == '':
+        if log == '' or not log.endswith('-log'):
             raise cherrypy.NotFound('No log selected')
 
         fields: Optional[Data_Sources] = self._cache.get()
