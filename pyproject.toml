@@ -1,6 +1,6 @@
 [project]
 name = "gros-status"
-version = "0.0.3"
+version = "1.0.0"
 description = "Grip on Software status dashboard"
 readme = "README.md"
 authors = [{name = "Leon Helwerda", email = "l.s.helwerda@liacs.leidenuniv.nl"}]

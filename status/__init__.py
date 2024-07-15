@@ -22,4 +22,4 @@ from .application import Status
 from .bootstrap import Bootstrap_Status
 
 __all__ = ['Status', 'Bootstrap_Status']
-__version__ = "0.0.3"
+__version__ = "1.0.0"
