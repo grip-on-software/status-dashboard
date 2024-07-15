@@ -1,0 +1,54 @@
+name: grip-on-software/status-dashboard
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4.1.4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5.1.0
+        with:
+          python-version: "${{ matrix.python }}"
+      - name: Install development packages for some dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install libldap-dev libsasl2-dev
+      - name: Install dependencies for test
+        run: make setup_test
+      - name: Unit test and coverage
+        run: make coverage
+        env:
+          WEBTEST_INTERACTIVE: "False"
+      - name: Mypy typing coverage
+        run: |
+          make setup_analysis
+          make mypy
+      - name: Adjust source paths in coverage for Sonar
+        run: |
+          sed -i "s/<source>\/home\/runner\/work\/status-dashboard\/status-dashboard/<source>\/github\/workspace/g" \
+            test-reports/cobertura.xml mypy-report/cobertura.xml
+      - name: SonarCloud Scan
+        uses: sonarsource/sonarcloud-github-action@v2.1.1
+        if: "${{ matrix.python == '3.8.18' }}"
+        env:
+          SONAR_TOKEN: "${{ secrets.SONAR_TOKEN }}"
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Coveralls upload
+        run: |
+          pip install coveralls
+          coveralls
+        if: "${{ success() }}"
+        env:
+          GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+    strategy:
+      matrix:
+        python:
+        - '3.8.18'
+        - '3.12.3'

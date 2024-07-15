@@ -1,0 +1,32 @@
+[
+    {
+        "level": "WARNING",
+        "filename": "/usr/local/lib/python3.6/site-packages/gros_gatherer-0.0.2-py3.6.egg/gatherer/utils.py",
+        "line": "103",
+        "module": "utils",
+        "function": "_import_sprints",
+        "message": "Could not load sprint data, no sprint matching possible.",
+        "date": 1516755648.641908,
+        "traceback": null
+    },
+    {
+        "level": "WARNING",
+        "filename": "/usr/local/lib/python3.6/site-packages/gros_gatherer-0.0.2-py3.6.egg/gatherer/utils.py",
+        "line": "103",
+        "module": "utils",
+        "function": "_import_sprints",
+        "message": "Could not load sprint data, no sprint matching possible.",
+        "date": 1516669245.806158,
+        "traceback": null
+    },
+    {
+        "level": "WARNING",
+        "filename": "/usr/local/lib/python3.6/site-packages/gros_gatherer-0.0.2-py3.6.egg/gatherer/utils.py",
+        "line": "103",
+        "module": "utils",
+        "function": "_import_sprints",
+        "message": "Could not load sprint data, no sprint matching possible.",
+        "date": 1516582842.05141,
+        "traceback": null
+    }
+]

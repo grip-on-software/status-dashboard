@@ -1,0 +1,22 @@
+[
+    {
+        "level": "WARNING",
+        "filename": null,
+        "line": "103",
+        "module": null,
+        "function": null,
+        "message": "?",
+        "date": null,
+        "traceback": null
+    },
+    {
+        "level": "WARNING",
+        "filename": "/home/agent/gatherer/utils.py",
+        "line": "103",
+        "module": "utils",
+        "function": "_import_sprints",
+        "message": "Could not load sprint data, no sprint matching possible.",
+        "date": 1516755629.386247,
+        "traceback": null
+    }
+]

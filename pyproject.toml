@@ -1,0 +1,62 @@
+[project]
+name = "gros-status"
+version = "0.0.3"
+description = "Grip on Software status dashboard"
+readme = "README.md"
+authors = [{name = "Leon Helwerda", email = "l.s.helwerda@liacs.leidenuniv.nl"}]
+license = {text = "Apache 2.0"}
+requires-python = ">=3.8"
+dependencies = [
+    "gros-gatherer==1.0.0",
+    "gros-server==1.0.0",
+    "Pyro4==4.82"
+]
+classifiers=[
+    "Development Status :: 3 - Alpha",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["status dashboard", "agent-based", "log parser"]
+
+[project.scripts]
+gros-status = "status.__main__:main"
+
+[project.urls]
+"Homepage" = "https://gros.liacs.nl"
+"PyPI" = "https://pypi.python.org/pypi/gros-status"
+"Source Code" = "https://github.com/grip-on-software/status-dashboard"
+"Issues" = "https://github.com/grip-on-software/status-dashboard/issues"
+"Pull Requests" = "https://github.com/grip-on-software/status-dashboard/pulls"
+"CI: GitHub Actions" = "https://github.com/grip-on-software/status-dashboard/actions"
+"CI: Coveralls" = "https://coveralls.io/github/grip-on-software/status-dashboard?branch=master"
+"CI: SonarCloud" = "https://sonarcloud.io/project/overview?id=grip-on-software_status-dashboard"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["status"]
+
+[tool.setuptools.package-data]
+"status" = ["py.typed"]
+
+[tool.mypy]
+mypy_path = "typeshed"
+
+[[tool.mypy.overrides]]
+module = ["Pyro4"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = "test"
+python_files = "*.py"

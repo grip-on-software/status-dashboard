@@ -1,0 +1,9 @@
+[run]
+branch = True
+[report]
+exclude_also =
+	if TYPE_CHECKING:
+	except ImportError:
+	raise NotImplementedError
+	raise AssertionError
+	\.\.\.

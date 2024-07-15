@@ -1,0 +1,227 @@
+[
+    {
+        "level": "INFO",
+        "message": "main:Configuration:",
+        "date": 1519437729.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:listOfProjects=Proj8",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:importerTasks=vcs,environment,jenkins,update,developerlink,repo_sources",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:gathererScripts=preflight.py project_to_json.py project_sources.py environment_sources.py git_to_json.py jenkins_to_json.py",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:cleanupRepos=false skipGather=true",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:logLevel=INFO",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:IMPORTER_BASE=/controller relPath=Proj8/export",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:Retrieving importer",
+        "date": 1519437730.0
+    },
+    {
+        "level": "INFO",
+        "message": "Downloading distribution from http://www.jenkins.test:8080/job/build-monetdb-import/job/master/lastBuild/artifact/Code/importerjson/dist/*zip*/dist.zip",
+        "date": 1519437730.000289
+    },
+    {
+        "level": "INFO",
+        "message": "main:Gathering data for project Proj8",
+        "date": 1519437731.0
+    },
+    {
+        "level": "INFO",
+        "message": "main:Importing data for project Proj8",
+        "date": 1519437731.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson main:Tasks to run: [change_path, commit, commit_comment, developerlink, environment, github_issue, github_issue_note, github_repo, gitlab_repo, jenkins, merge_request, merge_request_note, merge_request_review, repo_sources, tag, update, vcs_event]",
+        "date": 1519437731.0
+    },
+    {
+        "level": "INFO",
+        "message": "com.mchange.v2.log.MLog :MLog clients using java 1.4+ standard logging.",
+        "date": 1519437732.0
+    },
+    {
+        "level": "INFO",
+        "message": "com.mchange.v2.c3p0.C3P0Registry :Initializing c3p0-0.9.5.2 [built 08-December-2015 22:06:04 -0800; debug? true; trace: 10]",
+        "date": 1519437732.0
+    },
+    {
+        "level": "INFO",
+        "message": "com.mchange.v2.c3p0.impl.AbstractPoolBackedDataSource :Initializing c3p0 pool... com.mchange.v2.c3p0.ComboPooledDataSource [ acquireIncrement -> 3, acquireRetryAttempts -> 30, acquireRetryDelay -> 1000, autoCommitOnClose -> false, automaticTestTable -> null, breakAfterAcquireFailure -> false, checkoutTimeout -> 0, connectionCustomizerClassName -> null, connectionTesterClassName -> com.mchange.v2.c3p0.impl.DefaultConnectionTester, contextClassLoaderSource -> caller, dataSourceName -> 2snfgq9tagfvwa1i8avik|5387f9e0, debugUnreturnedConnectionStackTraces -> false, description -> null, driverClass -> nl.cwi.monetdb.jdbc.MonetDriver, extensions -> {}, factoryClassLocation -> null, forceIgnoreUnresolvedTransactions -> false, forceSynchronousCheckins -> false, forceUseNamedDriverClass -> false, identityToken -> 2snfgq9tagfvwa1i8avik|5387f9e0, idleConnectionTestPeriod -> 0, initialPoolSize -> 3, jdbcUrl -> jdbc:monetdb://db.monetdb.test:50000/gros, maxAdministrativeTaskTime -> 0, maxConnectionAge -> 0, maxIdleTime -> 0, maxIdleTimeExcessConnections -> 0, maxPoolSize -> 50, maxStatements -> 0, maxStatementsPerConnection -> 0, minPoolSize -> 3, numHelperThreads -> 3, preferredTestQuery -> null, privilegeSpawnedThreads -> false, properties -> {user=******, password=******}, propertyCycle -> 0, statementCacheNumDeferredCloseThreads -> 0, testConnectionOnCheckin -> false, testConnectionOnCheckout -> false, unreturnedConnectionTimeout -> 0, userOverrides -> {}, usesTraditionalReflectiveProxies -> false ]",
+        "date": 1519437732.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported project metadata in 0 seconds",
+        "date": 1519437732.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported version control system commit versions in 0 seconds",
+        "date": 1519437733.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported version control system changed paths in 30 seconds",
+        "date": 1519437763.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported version control system tags in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported version control system events in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitLab repositories in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpGitHubRepo parser:Cannot import GitHub repositories: /controller/Proj8/export/Proj8/data_github_repo.json (No such file or directory)",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitHub repositories in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpGitHubIssue parser:Cannot import GitHub issues: /controller/Proj8/export/Proj8/data_github_issue.json (No such file or directory)",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitHub issues in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpGitHubIssueNote parser:Cannot import GitHub issue comments: /controller/Proj8/export/Proj8/data_github_issue_note.json (No such file or directory)",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitHub issue comments in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitLab/TFS merge requests in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpMergeRequestReview parser:Cannot import TFS pull request reviews: /controller/Proj8/export/Proj8/data_merge_request_review.json (No such file or directory)",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported TFS pull request reviews in 0 seconds",
+        "date": 1519437764.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitLab/TFS merge request notes in 0 seconds",
+        "date": 1519437765.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported GitLab/TFS commit comments in 0 seconds",
+        "date": 1519437765.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported source environments in 0 seconds",
+        "date": 1519437765.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported Jenkins usage statistics in 0 seconds",
+        "date": 1519437765.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpUpdateTracker parser:Cannot import update tracking file github_update.json: /controller/Proj8/export/Proj8/github_update.json",
+        "date": 1519437765.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpUpdateTracker parser:Cannot import update tracking file tfs_update.json: /controller/Proj8/export/Proj8/tfs_update.json",
+        "date": 1519437765.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Imported update tracking files in 0 seconds",
+        "date": 1519437765.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpCommit updateJiraID:Prefix EX\\ex did not match any VCS developers",
+        "date": 1519437769.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpCommit updateJiraID:Prefix EX\\EX did not match any VCS developers",
+        "date": 1519437769.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpCommit updateJiraID:Prefix EX%@ did not match any VCS developers",
+        "date": 1519437769.0
+    },
+    {
+        "level": "WARNING",
+        "message": "importer.ImpCommit updateJiraID:Prefix ex%@ did not match any VCS developers",
+        "date": 1519437769.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.ImpCommit updateJiraID:Linked 6 VCS/LDAP developers to JIRA developers",
+        "date": 1519437769.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.ImpCommit showUnknownDevs:These VCS and LDAP developers should be linked in to Jira. Add them to the file data_vcsdev_to_dev.json:",
+        "date": 1519437769.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.ImpCommit showUnknownDevs:Unknown VCS/LDAP Developer: display name oracle, email noreply@example.org",
+        "date": 1519437769.0
+    },
+    {
+        "level": "INFO",
+        "message": "importer.Importerjson showCompleteTask:Fixed JIRA and VCS developer linking in 4 seconds",
+        "date": 1519437769.0
+    }
+]

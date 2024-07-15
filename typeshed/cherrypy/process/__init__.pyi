@@ -1,0 +1,3 @@
+from .wspbus import Bus
+
+bus: Bus = ...

@@ -1,9 +1,9 @@
 """
-Entry point for the status dashboard Web service.
+Module for status dasboard application.
 
 Copyright 2017-2020 ICTU
 Copyright 2017-2022 Leiden University
-Copyright 2017-2023 Leon Helwerda
+Copyright 2017-2024 Leon Helwerda
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
-from argparse import ArgumentParser, Namespace
+from argparse import Namespace
 import collections
 from configparser import RawConfigParser
 from datetime import datetime, timedelta
@@ -31,163 +31,23 @@ from pathlib import Path
 import re
 import sys
 import time
-from typing import Any, Deque, Dict, List, Mapping, MutableSequence, Optional, \
-    Sequence, TextIO, Tuple, Type, Union
+from typing import Any, Dict, Mapping, MutableSequence, Optional, Sequence, \
+    Tuple, Type, Union
 import cherrypy
 import Pyro4
 from gatherer.domain import Source
 from gatherer.jenkins import Jenkins, RequestException
-from gatherer.log import Log_Setup
 from gatherer.utils import format_date
 from gatherer.version_control.review import Review_System
 from server.application import Authenticated_Application
-from server.bootstrap import Bootstrap
 from server.template import Template
-
-Log_Line = Dict[str, Optional[Union[str, int, datetime]]]
-Log_Columns = List[str]
-Log_Result = Dict[str, Optional[Union[
-    str, Path, MutableSequence[Log_Line], Log_Columns, datetime
-]]]
+from .parser import Log_Parser, NDJSON_Parser, Export_Parser, Log_Result, \
+    Log_Line, Log_Columns
 
 Date_Field = Dict[str, Union[str, datetime]]
 Agent_Status_Fields = Dict[str, Optional[str]]
 Agent_Log_Fields = Dict[str, Optional[Union[str, Log_Result, Date_Field]]]
 Data_Sources = Dict[str, Any]
-
-class Log_Parser:
-    """
-    Generic log parser interface.
-    """
-
-    # List of parsed columns. Each log row has the given fields in its result.
-    COLUMNS: List[str] = []
-
-    def __init__(self, open_file: TextIO,
-                 date_cutoff: Optional[datetime] = None):
-        self._open_file = open_file
-        self._date_cutoff = date_cutoff
-
-    def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
-        """
-        Parse the open file to find log rows and levels.
-
-        The returned values are the highest log level encountered within the
-        date cutoff and all parsed row fields (iterable of dictionaries).
-        """
-
-        raise NotImplementedError('Must be implemented by subclasses')
-
-    def is_recent(self, date: Optional[datetime]) -> bool:
-        """
-        Check whether the given date is within the configured cutoff.
-        """
-
-        if self._date_cutoff is None or date is None:
-            return True
-
-        return self._date_cutoff < date
-
-class NDJSON_Parser(Log_Parser):
-    """
-    Log parser for newline JSON-delimited streams of logging objects as
-    provided by the HTTP logger.
-    """
-
-    COLUMNS = [
-        'date', 'level', 'filename', 'line', 'module', 'function', 'message',
-        'traceback'
-    ]
-
-    def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
-        rows: Deque[Log_Line] = collections.deque()
-        level = 0
-        for line in self._open_file:
-            log: Dict[str, Union[str, int]] = json.loads(line)
-            if 'created' in log:
-                date = datetime.fromtimestamp(float(log['created']))
-            else:
-                date = None
-
-            message = log.get('message')
-            if 'levelno' in log and message is not None and \
-                not Log_Setup.is_ignored(str(message)) and self.is_recent(date):
-                level = max(level, int(log['levelno']))
-
-            traceback = log.get('exc_text')
-            if traceback == 'None':
-                traceback = None
-
-            row = {
-                'level': log.get('levelname'),
-                'filename': log.get('pathname'),
-                'line': log.get('lineno'),
-                'module': log.get('module'),
-                'function': log.get('funcName'),
-                'message': message,
-                'date': date,
-                'traceback': traceback
-            }
-            rows.appendleft(row)
-
-        return level, rows
-
-class Export_Parser(Log_Parser):
-    """
-    Log parser for scraper and exporter runs.
-    """
-
-    COLUMNS = ['date', 'level', 'message']
-
-    LINE_REGEX = re.compile(
-        r'^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})(?:,(\d{3}))?:([A-Z]+):(.+)'
-    )
-
-    # Java log levels that are not found in Python
-    LEVELS = {
-        'SEVERE': 40,
-        'CONFIG': 10,
-        'FINE': 5,
-        'FINER': 4,
-        'FINEST': 3
-    }
-
-    @staticmethod
-    def _safe_int(bit: Optional[str]) -> int:
-        return int(bit) if bit is not None else 0
-
-    def parse(self) -> Tuple[int, MutableSequence[Log_Line]]:
-        rows: MutableSequence[Log_Line] = []
-        level = 0
-        for line in self._open_file:
-            match = self.LINE_REGEX.match(line)
-            if match:
-                parts = match.groups()
-                date = datetime(self._safe_int(parts[0]),
-                                self._safe_int(parts[1]),
-                                self._safe_int(parts[2]),
-                                self._safe_int(parts[3]),
-                                self._safe_int(parts[4]),
-                                self._safe_int(parts[5]),
-                                self._safe_int(parts[6]))
-                level_name = str(parts[7])
-                if level_name in self.LEVELS:
-                    level_number = self.LEVELS[level_name]
-                else:
-                    try:
-                        level_number = int(logging.getLevelName(level_name))
-                    except ValueError:
-                        level_number = 0
-
-                level = max(level, level_number)
-                row: Log_Line = {
-                    'level': level_name,
-                    'message': str(parts[8]),
-                    'date': date,
-                }
-                rows.append(row)
-
-        return level, rows
 
 class Status(Authenticated_Application):
     """
@@ -241,6 +101,14 @@ class Status(Authenticated_Application):
 
         self._source = Source.from_type('github', name=self.GATHERER_SOURCE,
                                         url=self.GATHERER_URL)
+
+    @property
+    def jenkins(self) -> Jenkins:
+        """
+        Retrieve the Jenkins API connection instance.
+        """
+
+        return self._jenkins
 
     def _get_session_html(self) -> str:
         return self._template.format("""
@@ -892,44 +760,3 @@ or return to the <a href="list">list</a>."""
                                               content_type='text/plain',
                                               disposition='inline',
                                               name=fields[log].get('filename'))
-
-class Bootstrap_Status(Bootstrap):
-    """
-    Bootstrapper for the status dashboard.
-    """
-
-    @property
-    def application_id(self) -> str:
-        return 'status_dashboard'
-
-    @property
-    def description(self) -> str:
-        return 'Run status dashboard WSGI server'
-
-    def add_args(self, parser: ArgumentParser) -> None:
-        parser.add_argument('--agent-path', dest='agent_path',
-                            default='/agent',
-                            help='Path to agent data')
-        parser.add_argument('--controller-path', dest='controller_path',
-                            default='/controller',
-                            help='Path to controller data')
-        parser.add_argument('--cutoff-days', dest='cutoff_days', type=int,
-                            default=int(self.config.get('schedule', 'days'))+1,
-                            help='Days during which logs are fresh')
-        parser.add_argument('--schedule-threshold', dest='schedule_threshold',
-                            type=int, default=60 * 60,
-                            help='Seconds allowed to be overdue on schedule')
-
-    def mount(self, conf: Dict[str, Dict[str, Any]]) -> None:
-        cherrypy.tree.mount(Status(self.args, self.config), '/status', conf)
-
-def main() -> None:
-    """
-    Main entry point.
-    """
-
-    bootstrap = Bootstrap_Status()
-    bootstrap.bootstrap()
-
-if __name__ == '__main__':
-    main()
