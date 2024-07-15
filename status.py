@@ -36,7 +36,7 @@ from typing import Any, Deque, Dict, List, Mapping, MutableSequence, Optional, \
 import cherrypy
 import Pyro4
 from gatherer.domain import Source
-from gatherer.jenkins import Jenkins
+from gatherer.jenkins import Jenkins, RequestException
 from gatherer.log import Log_Setup
 from gatherer.utils import format_date
 from gatherer.version_control.review import Review_System
@@ -276,27 +276,30 @@ class Status(Authenticated_Application):
         ]
         query = {'tree': f'builds[{",".join(fields)}]'}
         jobs: Dict[str, Dict[str, Union[str, int, datetime]]] = {}
-        job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'),
-                                    url=query)
+        try:
+            job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'),
+                                        url=query)
 
-        if 'builds' not in job.data:
-            return jobs
+            if 'builds' not in job.data:
+                return jobs
 
-        for build in job.data['builds']:
-            if build.get('result') is None:
-                continue
+            for build in job.data['builds']:
+                if build.get('result') is None:
+                    continue
 
-            agent = self._get_build_project(build, agents)
-            if agent is not None and agent not in jobs:
-                job_date = self._get_build_date(build)
-                result = build['result'].lower()
-                job_result = self._handle_date_cutoff(job_date, date_cutoff,
-                                                      result)
-                jobs[agent] = {
-                    'number': build['number'],
-                    'result': job_result,
-                    'date': job_date
-                }
+                agent = self._get_build_project(build, agents)
+                if agent is not None and agent not in jobs:
+                    job_date = self._get_build_date(build)
+                    result = build['result'].lower()
+                    job_result = self._handle_date_cutoff(job_date, date_cutoff,
+                                                          result)
+                    jobs[agent] = {
+                        'number': build['number'],
+                        'result': job_result,
+                        'date': job_date
+                    }
+        except RequestException:
+            logging.exception("Could not retrieve build data from Jenkins")
 
         return jobs
 
@@ -874,8 +877,7 @@ or return to the <a href="list">list</a>."""
             raise cherrypy.NotFound('No log data available')
 
         if log == 'jenkins-log':
-            jenkins = Jenkins.from_config(self.config)
-            job = jenkins.get_job(self.config.get('jenkins', 'scrape'))
+            job = self._jenkins.get_job(self.config.get('jenkins', 'scrape'))
             build = job.get_build(fields[log].get('number'))
             console = 'consoleText' if plain else 'console'
             raise cherrypy.HTTPRedirect(f'{build.base_url}{console}')
