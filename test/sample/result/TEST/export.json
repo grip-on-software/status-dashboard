@@ -1,0 +1,22 @@
+[
+    {
+        "level": "INFO",
+        "message": "Test message",
+        "date": 1519437729.000123
+    },
+    {
+        "level": "FINE",
+        "message": "Ok",
+        "date": 1519437729.000456
+    },
+    {
+        "level": "UNKNOWN",
+        "message": "Message with invalid level",
+        "date": 1519437730.0
+    },
+    {
+        "level": "CRITICAL",
+        "message": "Reactor leak detected",
+        "date": 1519437742.0
+    }
+]

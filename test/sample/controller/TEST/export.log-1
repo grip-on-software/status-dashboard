@@ -1,0 +1,4 @@
+2018-01-24 02:02:09,123:INFO:Test message
+2018-01-24 02:02:09,456:FINE:Ok
+2018-01-24 02:02:10:UNKNOWN:Message with invalid level
+2018-01-24 02:02:22:CRITICAL:Reactor leak detected

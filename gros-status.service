@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=forking
-ExecStart=/usr/local/bin/virtualenv.sh /usr/local/envs/controller /usr/local/bin/status.py --scgi --port 8116 --daemonize --pidfile /var/log/statusboard/statusboard.pid --log-path /var/log/statusboard --agent-path /agents --controller-path /controller --log INFO
+ExecStart=/usr/local/bin/virtualenv.sh /usr/local/envs/controller /usr/local/bin/gros-status --scgi --port 8116 --daemonize --pidfile /var/log/statusboard/statusboard.pid --log-path /var/log/statusboard --agent-path /agents --controller-path /controller --log INFO
 ExecReload=/bin/kill -s HUP $MAINPID
 WorkingDirectory=/srv/data-gathering
 KillSignal=SIGTERM

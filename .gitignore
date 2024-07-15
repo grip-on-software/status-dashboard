@@ -5,7 +5,7 @@
 *.pyc
 *.swp
 *.log
-mypy-report/
+!test/sample/**/*.log
 
 # Pip installation
 src/*/
@@ -21,6 +21,7 @@ downloads/
 eggs/
 .eggs/
 lib/
+!typeshed/*/lib/
 lib64/
 parts/
 sdist/
@@ -29,3 +30,15 @@ wheels/
 *.egg-info/
 .installed.cfg
 *.egg
+
+# Typing coverage
+.mypy_cache/
+mypy-report/
+
+# Pylint
+pylint-report.txt
+
+# Unit tests and coverage
+.coverage
+htmlcov/
+test-reports/

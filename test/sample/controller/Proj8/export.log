@@ -1,0 +1,45 @@
+2018-01-24 02:02:09:INFO:main:Configuration:
+2018-01-24 02:02:10:INFO:main:listOfProjects=Proj8
+2018-01-24 02:02:10:INFO:main:importerTasks=vcs,environment,jenkins,update,developerlink,repo_sources
+2018-01-24 02:02:10:INFO:main:gathererScripts=preflight.py project_to_json.py project_sources.py environment_sources.py git_to_json.py jenkins_to_json.py
+2018-01-24 02:02:10:INFO:main:cleanupRepos=false skipGather=true
+2018-01-24 02:02:10:INFO:main:logLevel=INFO
+2018-01-24 02:02:10:INFO:main:IMPORTER_BASE=/controller relPath=Proj8/export
+2018-01-24 02:02:10:INFO:main:Retrieving importer
+2018-01-24 02:02:10,289:INFO:Downloading distribution from http://www.jenkins.test:8080/job/build-monetdb-import/job/master/lastBuild/artifact/Code/importerjson/dist/*zip*/dist.zip
+2018-01-24 02:02:11:INFO:main:Gathering data for project Proj8
+2018-01-24 02:02:11:INFO:main:Importing data for project Proj8
+2018-01-24 02:02:11:INFO:importer.Importerjson main:Tasks to run: [change_path, commit, commit_comment, developerlink, environment, github_issue, github_issue_note, github_repo, gitlab_repo, jenkins, merge_request, merge_request_note, merge_request_review, repo_sources, tag, update, vcs_event]
+2018-01-24 02:02:12:INFO:com.mchange.v2.log.MLog :MLog clients using java 1.4+ standard logging.
+2018-01-24 02:02:12:INFO:com.mchange.v2.c3p0.C3P0Registry :Initializing c3p0-0.9.5.2 [built 08-December-2015 22:06:04 -0800; debug? true; trace: 10]
+2018-01-24 02:02:12:INFO:com.mchange.v2.c3p0.impl.AbstractPoolBackedDataSource :Initializing c3p0 pool... com.mchange.v2.c3p0.ComboPooledDataSource [ acquireIncrement -> 3, acquireRetryAttempts -> 30, acquireRetryDelay -> 1000, autoCommitOnClose -> false, automaticTestTable -> null, breakAfterAcquireFailure -> false, checkoutTimeout -> 0, connectionCustomizerClassName -> null, connectionTesterClassName -> com.mchange.v2.c3p0.impl.DefaultConnectionTester, contextClassLoaderSource -> caller, dataSourceName -> 2snfgq9tagfvwa1i8avik|5387f9e0, debugUnreturnedConnectionStackTraces -> false, description -> null, driverClass -> nl.cwi.monetdb.jdbc.MonetDriver, extensions -> {}, factoryClassLocation -> null, forceIgnoreUnresolvedTransactions -> false, forceSynchronousCheckins -> false, forceUseNamedDriverClass -> false, identityToken -> 2snfgq9tagfvwa1i8avik|5387f9e0, idleConnectionTestPeriod -> 0, initialPoolSize -> 3, jdbcUrl -> jdbc:monetdb://db.monetdb.test:50000/gros, maxAdministrativeTaskTime -> 0, maxConnectionAge -> 0, maxIdleTime -> 0, maxIdleTimeExcessConnections -> 0, maxPoolSize -> 50, maxStatements -> 0, maxStatementsPerConnection -> 0, minPoolSize -> 3, numHelperThreads -> 3, preferredTestQuery -> null, privilegeSpawnedThreads -> false, properties -> {user=******, password=******}, propertyCycle -> 0, statementCacheNumDeferredCloseThreads -> 0, testConnectionOnCheckin -> false, testConnectionOnCheckout -> false, unreturnedConnectionTimeout -> 0, userOverrides -> {}, usesTraditionalReflectiveProxies -> false ]
+2018-01-24 02:02:12:INFO:importer.Importerjson showCompleteTask:Imported project metadata in 0 seconds
+2018-01-24 02:02:13:INFO:importer.Importerjson showCompleteTask:Imported version control system commit versions in 0 seconds
+2018-01-24 02:02:43:INFO:importer.Importerjson showCompleteTask:Imported version control system changed paths in 30 seconds
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported version control system tags in 0 seconds
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported version control system events in 0 seconds
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported GitLab repositories in 0 seconds
+2018-01-24 02:02:44:WARNING:importer.ImpGitHubRepo parser:Cannot import GitHub repositories: /controller/Proj8/export/Proj8/data_github_repo.json (No such file or directory)
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported GitHub repositories in 0 seconds
+2018-01-24 02:02:44:WARNING:importer.ImpGitHubIssue parser:Cannot import GitHub issues: /controller/Proj8/export/Proj8/data_github_issue.json (No such file or directory)
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported GitHub issues in 0 seconds
+2018-01-24 02:02:44:WARNING:importer.ImpGitHubIssueNote parser:Cannot import GitHub issue comments: /controller/Proj8/export/Proj8/data_github_issue_note.json (No such file or directory)
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported GitHub issue comments in 0 seconds
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported GitLab/TFS merge requests in 0 seconds
+2018-01-24 02:02:44:WARNING:importer.ImpMergeRequestReview parser:Cannot import TFS pull request reviews: /controller/Proj8/export/Proj8/data_merge_request_review.json (No such file or directory)
+2018-01-24 02:02:44:INFO:importer.Importerjson showCompleteTask:Imported TFS pull request reviews in 0 seconds
+2018-01-24 02:02:45:INFO:importer.Importerjson showCompleteTask:Imported GitLab/TFS merge request notes in 0 seconds
+2018-01-24 02:02:45:INFO:importer.Importerjson showCompleteTask:Imported GitLab/TFS commit comments in 0 seconds
+2018-01-24 02:02:45:INFO:importer.Importerjson showCompleteTask:Imported source environments in 0 seconds
+2018-01-24 02:02:45:INFO:importer.Importerjson showCompleteTask:Imported Jenkins usage statistics in 0 seconds
+2018-01-24 02:02:45:WARNING:importer.ImpUpdateTracker parser:Cannot import update tracking file github_update.json: /controller/Proj8/export/Proj8/github_update.json
+2018-01-24 02:02:45:WARNING:importer.ImpUpdateTracker parser:Cannot import update tracking file tfs_update.json: /controller/Proj8/export/Proj8/tfs_update.json
+2018-01-24 02:02:45:INFO:importer.Importerjson showCompleteTask:Imported update tracking files in 0 seconds
+2018-01-24 02:02:49:WARNING:importer.ImpCommit updateJiraID:Prefix EX\ex did not match any VCS developers
+2018-01-24 02:02:49:WARNING:importer.ImpCommit updateJiraID:Prefix EX\EX did not match any VCS developers
+2018-01-24 02:02:49:WARNING:importer.ImpCommit updateJiraID:Prefix EX%@ did not match any VCS developers
+2018-01-24 02:02:49:WARNING:importer.ImpCommit updateJiraID:Prefix ex%@ did not match any VCS developers
+2018-01-24 02:02:49:INFO:importer.ImpCommit updateJiraID:Linked 6 VCS/LDAP developers to JIRA developers
+2018-01-24 02:02:49:INFO:importer.ImpCommit showUnknownDevs:These VCS and LDAP developers should be linked in to Jira. Add them to the file data_vcsdev_to_dev.json:
+2018-01-24 02:02:49:INFO:importer.ImpCommit showUnknownDevs:Unknown VCS/LDAP Developer: display name oracle, email noreply@example.org
+2018-01-24 02:02:49:INFO:importer.Importerjson showCompleteTask:Fixed JIRA and VCS developer linking in 4 seconds
